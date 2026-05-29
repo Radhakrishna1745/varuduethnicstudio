@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Global Helpers
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { 
+      return request.resource.data; 
+    }
+    function existing() { 
+      return resource.data; 
+    }
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    function isAdmin() { 
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); 
+    }
+
+    // Validation Blueprint for CustomerLead
+    function isValidCustomerLead(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 128
+        && data.phone is string && data.phone.size() > 0 && data.phone.size() <= 32
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 128
+        && (data.weddingDate == null || (data.weddingDate is string && data.weddingDate.size() <= 32))
+        && (data.occasion == null || (data.occasion is string && data.occasion.size() <= 200))
+        && (data.budget == null || (data.budget is string && data.budget.size() <= 64))
+        && (data.preferredColors == null || (data.preferredColors is list && data.preferredColors.size() <= 10))
+        && (data.preferredStyles == null || (data.preferredStyles is list && data.preferredStyles.size() <= 10))
+        && (data.notes == null || (data.notes is string && data.notes.size() <= 1000))
+        && data.timestamp is string && data.timestamp.size() <= 32
+        && data.status is string && data.status.size() <= 32
+        && (data.uploadedImages == null || (data.uploadedImages is list && data.uploadedImages.size() <= 10))
+        && (data.adminNotes == null || (data.adminNotes is string && data.adminNotes.size() <= 1000))
+        && (data.whatsappSent == null || data.whatsappSent is bool);
+    }
+
+    // Validation Blueprint for Appointment
+    function isValidAppointment(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 128
+        && data.date is string && data.date.size() > 0 && data.date.size() <= 32
+        && data.time is string && data.time.size() > 0 && data.time.size() <= 32
+        && data.customerName is string && data.customerName.size() > 0 && data.customerName.size() <= 128
+        && data.customerPhone is string && data.customerPhone.size() > 0 && data.customerPhone.size() <= 32
+        && (data.customerEmail == null || (data.customerEmail is string && data.customerEmail.size() <= 128))
+        && (data.occasion == null || (data.occasion is string && data.occasion.size() <= 200))
+        && data.status is string && data.status.size() <= 32
+        && data.timestamp is string && data.timestamp.size() <= 32
+        && (data.adminNotes == null || (data.adminNotes is string && data.adminNotes.size() <= 1000));
+    }
+
+    // Leads collection rules
+    match /leads/{leadId} {
+      allow create: if isValidId(leadId) 
+        && incoming().id == leadId 
+        && incoming().status == 'New' 
+        && isValidCustomerLead(incoming());
+      
+      allow read, delete: if isAdmin();
+      
+      allow update: if isAdmin() 
+        && isValidCustomerLead(incoming());
+    }
+
+    // Appointments collection rules
+    match /appointments/{appointmentId} {
+      allow create: if isValidId(appointmentId) 
+        && incoming().id == appointmentId 
+        && incoming().status == 'Pending' 
+        && isValidAppointment(incoming());
+        
+      allow read, delete: if isAdmin();
+      
+      allow update: if isAdmin() 
+        && isValidAppointment(incoming());
+    }
+
+    // Admins path helper
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only write directly via console or system setup
+    }
+  }
+}

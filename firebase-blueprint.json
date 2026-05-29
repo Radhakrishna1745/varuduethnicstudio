@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "CustomerLead": {
+      "title": "CustomerLead",
+      "description": "A customer who sent an inquiry about clothing styles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "weddingDate": { "type": "string" },
+        "occasion": { "type": "string" },
+        "budget": { "type": "string" },
+        "preferredColors": { "type": "array" },
+        "preferredStyles": { "type": "array" },
+        "notes": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string" },
+        "uploadedImages": { "type": "array" },
+        "adminNotes": { "type": "string" },
+        "whatsappSent": { "type": "boolean" }
+      },
+      "required": ["id", "name", "phone", "email", "timestamp", "status"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "An appointment booked by a custom groom",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "branch": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "occasion": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "adminNotes": { "type": "string" }
+      },
+      "required": ["id", "branch", "date", "time", "customerName", "customerPhone", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/leads/{leadId}": {
+      "schema": "CustomerLead",
+      "description": "Customer leads received from inquiry forms"
+    },
+    "/appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "Store booked appointments"
+    }
+  }
+}
