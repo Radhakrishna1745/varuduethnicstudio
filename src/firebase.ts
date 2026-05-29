@@ -1,11 +1,13 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();
+export const storage = getStorage(app);
 
 // Test connection strictly to check if Firestore is operational
 async function testConnection() {
@@ -18,6 +20,22 @@ async function testConnection() {
   }
 }
 testConnection();
+
+// Firebase Storage Helpers
+export async function uploadToStorage(path: string, file: Blob | File): Promise<string> {
+  const fileRef = ref(storage, path);
+  await uploadBytes(fileRef, file);
+  return await getDownloadURL(fileRef);
+}
+
+export async function deleteFromStorage(path: string): Promise<void> {
+  const fileRef = ref(storage, path);
+  try {
+    await deleteObject(fileRef);
+  } catch (error) {
+    console.warn(`Error deleting ${path} from storage:`, error);
+  }
+}
 
 // Structured Firestore error logger as mandated by guidelines
 export enum OperationType {

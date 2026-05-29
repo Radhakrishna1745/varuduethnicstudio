@@ -108,6 +108,7 @@ export default function App() {
     loadLegacyPhoto();
 
     window.addEventListener('varudu-photo-updated', loadLegacyPhoto);
+    window.addEventListener('varudu-settings-updated', loadLegacyPhoto);
 
     // Randomize slot decreases slowly to trigger real customer scarcity/FOMO
     const interval = setInterval(() => {
@@ -121,6 +122,7 @@ export default function App() {
       clearInterval(interval);
       stopLiveSync();
       window.removeEventListener('varudu-photo-updated', loadLegacyPhoto);
+      window.removeEventListener('varudu-settings-updated', loadLegacyPhoto);
     };
   }, []);
 

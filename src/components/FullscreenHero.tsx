@@ -55,10 +55,12 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
     }, 8000);
 
     window.addEventListener('varudu-photo-updated', loadCustomPhotos);
+    window.addEventListener('varudu-settings-updated', loadCustomPhotos);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('varudu-photo-updated', loadCustomPhotos);
+      window.removeEventListener('varudu-settings-updated', loadCustomPhotos);
     };
   }, []);
 

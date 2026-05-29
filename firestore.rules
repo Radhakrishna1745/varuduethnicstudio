@@ -58,6 +58,17 @@ service cloud.firestore {
         && (data.adminNotes == null || (data.adminNotes is string && data.adminNotes.size() <= 1000));
     }
 
+    // Validation Blueprint for MediaItem
+    function isValidMediaItem(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.fileName is string && data.fileName.size() <= 200
+        && data.fileUrl is string && data.fileUrl.size() <= 1000
+        && data.uploadDate is string && data.uploadDate.size() <= 32
+        && data.category is string && data.category.size() <= 64
+        && data.fileType is string && data.fileType.size() <= 32;
+    }
+
     // Leads collection rules
     match /leads/{leadId} {
       allow create: if isValidId(leadId) 
@@ -82,6 +93,19 @@ service cloud.firestore {
       
       allow update: if isAdmin() 
         && isValidAppointment(incoming());
+    }
+
+    // Settings collection rules
+    match /settings/{settingId} {
+      allow read: if true; // Publicly readable by any customer/visitor
+      allow write, update, delete: if isAdmin(); // Only editable by logged-in admin
+    }
+
+    // Media collection rules
+    match /media/{mediaId} {
+      allow read: if true; // Publicly readable by all visitors
+      allow create, update: if isAdmin() && isValidId(mediaId) && incoming().id == mediaId && isValidMediaItem(incoming());
+      allow delete: if isAdmin();
     }
 
     // Admins path helper

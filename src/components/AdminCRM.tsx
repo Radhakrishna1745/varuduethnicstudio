@@ -12,8 +12,11 @@ import {
   storeMediaFile, getMediaFile, clearMediaFile,
   getDynamicCollections, saveDynamicCollections,
   getDynamicLookbook, saveDynamicLookbook,
-  getWebPhoto, saveWebPhoto, deleteWebPhoto
+  getWebPhoto, saveWebPhoto, deleteWebPhoto,
+  saveSetting, getCachedSetting,
+  uploadMediaAsset, updateMediaAssetMetadata, deleteMediaAsset, MediaAsset
 } from '../utils';
+import { uploadToStorage, deleteFromStorage } from '../firebase';
 import { 
   Search, Filter, Sliders, MessageSquare, Phone, Clock, Download, 
   Sparkles, CheckCircle, AlertOctagon, TrendingUp, DollarSign, Calendar, 
@@ -156,17 +159,27 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
       const targetId = editingProduct ? editingProduct.id : `prod-${Date.now()}`;
 
-      // Store in IndexedDB
+      // Store in IndexedDB cache and upload to Firebase Storage
       if (prodImgFile) {
         const key = `prod_img_${targetId}`;
         await storeMediaFile(key, prodImgFile);
-        finalImgUrl = `indexeddb:${key}`;
+        try {
+          const downloadUrl = await uploadToStorage(`products/images/${targetId}`, prodImgFile);
+          finalImgUrl = downloadUrl;
+        } catch (_) {
+          finalImgUrl = `indexeddb:${key}`;
+        }
       }
 
       if (prodVidFile) {
         const key = `prod_vid_${targetId}`;
         await storeMediaFile(key, prodVidFile);
-        finalVidUrl = `indexeddb:${key}`;
+        try {
+          const downloadUrl = await uploadToStorage(`products/videos/${targetId}`, prodVidFile);
+          finalVidUrl = downloadUrl;
+        } catch (_) {
+          finalVidUrl = `indexeddb:${key}`;
+        }
       }
 
       const tagsArray = prodTags ? prodTags.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -235,16 +248,27 @@ export default function AdminCRM({ onClose }: CRMProps) {
       let finalImgUrl = editingLookbook ? editingLookbook.imageUrl : 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
       let finalVidUrl = editingLookbook ? editingLookbook.videoUrl || '' : '';
 
+      // Store in IndexedDB cache and upload to Firebase Storage
       if (lkImgFile) {
         const key = `lk_img_${targetId}`;
         await storeMediaFile(key, lkImgFile);
-        finalImgUrl = `indexeddb:${key}`;
+        try {
+          const downloadUrl = await uploadToStorage(`lookbook/images/${targetId}`, lkImgFile);
+          finalImgUrl = downloadUrl;
+        } catch (_) {
+          finalImgUrl = `indexeddb:${key}`;
+        }
       }
 
       if (lkVidFile) {
         const key = `lk_vid_${targetId}`;
         await storeMediaFile(key, lkVidFile);
-        finalVidUrl = `indexeddb:${key}`;
+        try {
+          const downloadUrl = await uploadToStorage(`lookbook/videos/${targetId}`, lkVidFile);
+          finalVidUrl = downloadUrl;
+        } catch (_) {
+          finalVidUrl = `indexeddb:${key}`;
+        }
       }
 
       const newLook: LookbookItem = {
@@ -312,15 +336,38 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [hasCustomHero2, setHasCustomHero2] = useState(false);
   const [hasCustomLegacy, setHasCustomLegacy] = useState(false);
 
+  // General Media Asset Hub States
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [mediaAssetSearch, setMediaAssetSearch] = useState('');
+  const [mediaAssetCategoryFilter, setMediaAssetCategoryFilter] = useState<string>('All');
+  
+  // Form Upload States
+  const [newAssetTitle, setNewAssetTitle] = useState('');
+  const [newAssetCategory, setNewAssetCategory] = useState<'images' | 'videos' | 'hero-banners' | 'groom-collections'>('images');
+  const [newAssetFile, setNewAssetFile] = useState<File | null>(null);
+  const [assetUploadingFlag, setAssetUploadingFlag] = useState(false);
+  const [assetFormError, setAssetFormError] = useState('');
+  const [assetFormSuccess, setAssetFormSuccess] = useState('');
+
+  // Inline Editing States
+  const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [editingCategory, setEditingCategory] = useState<'images' | 'videos' | 'hero-banners' | 'groom-collections'>('images');
+
   // Load and subscribe to real-time events on same window
   useEffect(() => {
     // Load stored brand video logo preview
     async function loadStoredVideo() {
       try {
-        const blob = await getMediaFile('brand_logo_video');
-        if (blob) {
-          setAdminVideoBlob(blob);
-          setAdminVideoUrl(URL.createObjectURL(blob));
+        const cachedUrl = getCachedSetting('brand', 'brand_logo_video', '');
+        if (cachedUrl) {
+          setAdminVideoUrl(cachedUrl);
+        } else {
+          const blob = await getMediaFile('brand_logo_video');
+          if (blob) {
+            setAdminVideoBlob(blob);
+            setAdminVideoUrl(URL.createObjectURL(blob));
+          }
         }
       } catch (e) {
         console.warn('Error reading from IndexedDB:', e);
@@ -340,20 +387,47 @@ export default function AdminCRM({ onClose }: CRMProps) {
       setPhotoHero2(hero2);
       setPhotoLegacy(legacy);
 
+      const cached0 = getCachedSetting('web_photos', 'web_photo_hero_0', '');
+      const cached1 = getCachedSetting('web_photos', 'web_photo_hero_1', '');
+      const cached2 = getCachedSetting('web_photos', 'web_photo_hero_2', '');
+      const cachedLegacy = getCachedSetting('web_photos', 'web_photo_legacy', '');
+
       const blob0 = await getMediaFile('web_photo_hero_0');
       const blob1 = await getMediaFile('web_photo_hero_1');
       const blob2 = await getMediaFile('web_photo_hero_2');
       const legacyBlob = await getMediaFile('web_photo_legacy');
 
-      setHasCustomHero0(!!blob0);
-      setHasCustomHero1(!!blob1);
-      setHasCustomHero2(!!blob2);
-      setHasCustomLegacy(!!legacyBlob);
+      setHasCustomHero0(!!cached0 || !!blob0);
+      setHasCustomHero1(!!cached1 || !!blob1);
+      setHasCustomHero2(!!cached2 || !!blob2);
+      setHasCustomLegacy(!!cachedLegacy || !!legacyBlob);
     }
     loadWebPhotos();
 
+    // Load general media assets list
+    const loadCachedMedia = () => {
+      try {
+        const stored = localStorage.getItem('varudu_media_asset_list');
+        if (stored) {
+          setMediaAssets(JSON.parse(stored));
+        }
+      } catch (err) {
+        console.warn('Error loading media assets cache:', err);
+      }
+    };
+    loadCachedMedia();
+
+    const handleMediaUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && Array.isArray(detail)) {
+        setMediaAssets(detail);
+      }
+    };
+    window.addEventListener('varudu-media-updated', handleMediaUpdate as EventListener);
+
     return () => {
-      if (adminVideoUrl) {
+      window.removeEventListener('varudu-media-updated', handleMediaUpdate as EventListener);
+      if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
         try {
           URL.revokeObjectURL(adminVideoUrl);
         } catch (_) {}
@@ -369,7 +443,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
     try {
       await saveWebPhoto(key, file);
-      const url = URL.createObjectURL(file);
+      const cached = getCachedSetting('web_photos', key, '');
+      const url = cached || URL.createObjectURL(file);
       if (key === 'web_photo_hero_0') {
         setPhotoHero0(url);
         setHasCustomHero0(true);
@@ -413,32 +488,115 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
   };
 
+  // General Media Asset Hub Actions
+  const handleMediaAssetUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAssetFile) {
+      setAssetFormError('Please select a file to upload.');
+      return;
+    }
+    setAssetFormError('');
+    setAssetFormSuccess('');
+    setAssetUploadingFlag(true);
+
+    try {
+      const titleToSave = newAssetTitle.trim();
+      const uploadedItem = await uploadMediaAsset(newAssetFile, titleToSave, newAssetCategory);
+      setAssetFormSuccess(`Successfully uploaded "${uploadedItem.title}" to category "${newAssetCategory}" and synced!`);
+      setNewAssetTitle('');
+      setNewAssetFile(null);
+      // Reset input element if any
+      const fileInput = document.getElementById('general-asset-input') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      playRegalGoldChime();
+    } catch (err: any) {
+      console.error('Failed to upload general media asset:', err);
+      setAssetFormError(`Upload failed: ${err.message || err}`);
+    } finally {
+      setAssetUploadingFlag(false);
+    }
+  };
+
+  const handleDeleteMediaAsset = async (item: MediaAsset) => {
+    if (!window.confirm(`Are you sure you want to permanently delete the media asset "${item.title}"?`)) {
+      return;
+    }
+    try {
+      await deleteMediaAsset(item.id, item.fileUrl, item.category, item.fileName);
+      setMediaUploadSuccess(`Media asset "${item.title}" deleted successfully!`);
+      playRegalGoldChime();
+    } catch (err) {
+      console.error('Failed to delete media asset:', err);
+      alert('Failed to delete media asset.');
+    }
+  };
+
+  const handleStartEditingMedia = (item: MediaAsset) => {
+    setEditingMediaId(item.id);
+    setEditingTitle(item.title);
+    setEditingCategory(item.category);
+  };
+
+  const handleSaveEditingMedia = async (mediaId: string) => {
+    if (!editingTitle.trim()) {
+      alert('Title cannot be empty.');
+      return;
+    }
+    try {
+      await updateMediaAssetMetadata(mediaId, {
+        title: editingTitle.trim(),
+        category: editingCategory
+      });
+      setEditingMediaId(null);
+      setMediaUploadSuccess('Media asset settings updated successfully!');
+      playRegalGoldChime();
+    } catch (err) {
+      console.error('Failed to update media asset:', err);
+      alert('Failed to update media asset details.');
+    }
+  };
+
   const handleMediaFileChange = async (file: File) => {
     if (!file) return;
 
     if (!file.type.startsWith('video/')) {
-      alert('Only .mp4, .webm, and other video files are supported!');
-      return;
+       alert('Only .mp4, .webm, and other video files are supported!');
+       return;
     }
 
     try {
-      // Store inside indexedDB
+      // 1. Store locally in IndexedDB as a cache/fallback
       await storeMediaFile('brand_logo_video', file);
       
+      // 2. Upload to Firebase Storage in videos/
+      setMediaUploadSuccess('Processing video encoding and transmitting to Firebase Storage...');
+      const downloadUrl = await uploadToStorage('videos/brand_logo_video', file);
+      
+      // 3. Save URL to settings document
+      await saveSetting('brand', { brand_logo_video: downloadUrl });
+
       // Update local states
-      if (adminVideoUrl) {
+      if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
         try {
           URL.revokeObjectURL(adminVideoUrl);
         } catch (_) {}
       }
-      const url = URL.createObjectURL(file);
-      setAdminVideoUrl(url);
+      setAdminVideoUrl(downloadUrl);
       setAdminVideoBlob(file);
-      setMediaUploadSuccess(`Brand intro video "${file.name}" (${(file.size / (1024 * 1024)).toFixed(2)} MB) uploaded successfully! Play home splash or click "🎬 Cinema" in the Header to watch it.`);
+      setMediaUploadSuccess(`Brand intro video "${file.name}" uploaded successfully to Firebase Storage! All visitors will watch it instantly from high-speed CDN.`);
       playRegalGoldChime();
     } catch (err) {
-      console.error('Failed to save to indexedDB:', err);
-      alert('Failed to store video locally. Make sure IndexedDB is enabled in your browser.');
+      console.error('Failed to save branding video to Firebase Storage:', err);
+      // Fallback to local
+      try {
+        await storeMediaFile('brand_logo_video', file);
+        const url = URL.createObjectURL(file);
+        setAdminVideoUrl(url);
+        setAdminVideoBlob(file);
+        setMediaUploadSuccess(`Uploaded local fallback: "${file.name}". Note: Visitors won't see this unless uploaded successfully to cloud.`);
+      } catch (innerErr) {
+        alert('Failed to store video: ' + (err instanceof Error ? err.message : String(err)));
+      }
     }
   };
 
@@ -464,7 +622,12 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const handleClearMedia = async () => {
     try {
       await clearMediaFile('brand_logo_video');
-      if (adminVideoUrl) {
+      await saveSetting('brand', { brand_logo_video: "" });
+      try {
+        await deleteFromStorage('videos/brand_logo_video');
+      } catch (_) {}
+      
+      if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
         try {
           URL.revokeObjectURL(adminVideoUrl);
         } catch (_) {}
@@ -1116,6 +1279,293 @@ export default function AdminCRM({ onClose }: CRMProps) {
                       </button>
                     )}
                   </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* GENERAL CLOUD MEDIA REPOSITORY HUB */}
+            <div className="bg-[#121212] border border-[#C5A85D]/20 p-6 sm:p-8 rounded-lg relative overflow-hidden shadow-xl mt-10" id="general-media-hub-section">
+              <span className="text-[10px] uppercase tracking-[0.25em] text-[#C5A85D] font-sans font-bold block mb-1">
+                Varudu Storage Registry Integration
+              </span>
+              <h3 className="font-display font-medium text-xl text-white tracking-widest uppercase flex items-center space-x-2 mb-6">
+                <HardDrive className="w-5 h-5 text-[#C5A85D]" />
+                <span>Global Media Asset Hub (Firebase Storage)</span>
+              </h3>
+
+              {/* TWO COLUMN GRID: UPLOAD ON LEFT, DICTIONARY ON RIGHT */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                {/* COLUMN 1: UPLOAD WIDGET (4 cols) */}
+                <div className="lg:col-span-4 bg-[#0D0D0D] border border-white/5 rounded-lg p-5">
+                  <h4 className="text-white font-sans font-semibold text-xs uppercase tracking-wider mb-4 text-[#C5A85D] border-b border-white/5 pb-2">
+                    Upload New Asset
+                  </h4>
+                  
+                  <form onSubmit={handleMediaAssetUpload} className="space-y-4">
+                    <div>
+                      <label className="block text-[9px] uppercase tracking-wider text-gray-400 font-sans font-bold mb-1">
+                        Asset Title
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Ivory Sherwani Detail"
+                        value={newAssetTitle}
+                        onChange={(e) => setNewAssetTitle(e.target.value)}
+                        className="w-full bg-black border border-white/10 rounded px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#C5A85D]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] uppercase tracking-wider text-gray-400 font-sans font-bold mb-1">
+                        Destination Folder (Category)
+                      </label>
+                      <select
+                        value={newAssetCategory}
+                        onChange={(e: any) => setNewAssetCategory(e.target.value)}
+                        className="w-full bg-black border border-white/10 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-[#C5A85D]"
+                      >
+                        <option value="images">images/ (General Brand Photos)</option>
+                        <option value="videos">videos/ (Cinema Clips & Loops)</option>
+                        <option value="hero-banners">hero-banners/ (Hero Carousel Backdrops)</option>
+                        <option value="groom-collections">groom-collections/ (Premium Grooming Catalogues)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] uppercase tracking-wider text-gray-400 font-sans font-bold mb-2">
+                        Image or Video Attachment
+                      </label>
+                      <div className="border border-dashed border-white/10 hover:border-[#C5A85D]/40 rounded-lg p-4 text-center cursor-pointer transition-all bg-black/50 hover:bg-black relative">
+                        <input
+                          id="general-asset-input"
+                          type="file"
+                          accept="image/*,video/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setNewAssetFile(file);
+                              if (!newAssetTitle) {
+                                // Default title to clean filename omitting extension
+                                const cleanBase = file.name.split('.')[0].replace(/[-_]/g, ' ');
+                                setNewAssetTitle(cleanBase);
+                              }
+                            }
+                          }}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        />
+                        <div className="flex flex-col items-center space-y-1">
+                          <Upload className="w-6 h-6 text-gray-500" />
+                          <span className="text-[10px] text-gray-400 font-sans">
+                            {newAssetFile ? newAssetFile.name : 'Click or Drag & Drop'}
+                          </span>
+                          <span className="text-[8px] text-gray-600 uppercase tracking-widest font-mono">
+                            {newAssetFile ? `${(newAssetFile.size / (1024 * 1024)).toFixed(2)} MB` : 'Images or Videos up to 100MB'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {assetFormError && (
+                      <div className="bg-red-950/20 border border-red-500/20 rounded p-3 flex items-start space-x-2">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        <span className="text-[10px] text-red-200 leading-tight">{assetFormError}</span>
+                      </div>
+                    )}
+
+                    {assetFormSuccess && (
+                      <div className="bg-emerald-950/20 border border-emerald-500/20 rounded p-3 flex items-start space-x-2">
+                        <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <span className="text-[10px] text-emerald-200 leading-tight">{assetFormSuccess}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={assetUploadingFlag || !newAssetFile}
+                      className="w-full py-2.5 bg-[#C5A85D] hover:bg-[#D5B86D] disabled:bg-gray-800 disabled:text-gray-500 text-black font-sans font-bold text-[10px] uppercase tracking-widest rounded transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-md"
+                    >
+                      {assetUploadingFlag ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Streaming to Storage...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Deploy Asset to Cloud</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+
+                {/* COLUMN 2: REGISTRY BROWSER Grid (8 cols) */}
+                <div className="lg:col-span-8 flex flex-col space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-white/5 pb-3">
+                    <div>
+                      <h4 className="text-white font-sans font-semibold text-xs uppercase tracking-wider text-[#C5A85D]">
+                        Cloud Storage Directory
+                      </h4>
+                      <p className="text-gray-400 text-[10px] mt-0.5 leading-normal">
+                        Active assets linked directly across the groom styling framework.
+                      </p>
+                    </div>
+
+                    {/* Filter controls */}
+                    <div className="flex items-center space-x-2 w-full sm:w-auto">
+                      <div className="relative flex-1 sm:w-48">
+                        <Search className="absolute left-2.5 top-2.5 w-3 h-3 text-gray-500" />
+                        <input
+                          type="text"
+                          placeholder="Search files..."
+                          value={mediaAssetSearch}
+                          onChange={(e) => setMediaAssetSearch(e.target.value)}
+                          className="w-full bg-black/60 border border-white/10 rounded-md pl-7 pr-3 py-1.5 text-[10px] text-white focus:outline-none focus:border-[#C5A85D]"
+                        />
+                      </div>
+                      
+                      <select
+                        value={mediaAssetCategoryFilter}
+                        onChange={(e) => setMediaAssetCategoryFilter(e.target.value)}
+                        className="bg-black border border-white/10 rounded-md px-2 py-1.5 text-[10px] text-white focus:outline-none focus:border-[#C5A85D]"
+                      >
+                        <option value="All">All Folders</option>
+                        <option value="images">images/</option>
+                        <option value="videos">videos/</option>
+                        <option value="hero-banners">hero-banners/</option>
+                        <option value="groom-collections">groom-collections/</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* FILES GRID */}
+                  {(() => {
+                    const filtered = mediaAssets.filter(item => {
+                      const matchesCategory = mediaAssetCategoryFilter === 'All' || item.category === mediaAssetCategoryFilter;
+                      const matchesQuery = !mediaAssetSearch.trim() || item.title.toLowerCase().includes(mediaAssetSearch.toLowerCase()) || item.fileName.toLowerCase().includes(mediaAssetSearch.toLowerCase());
+                      return matchesCategory && matchesQuery;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="flex flex-col items-center justify-center py-20 border border-dashed border-white/5 rounded-lg bg-black/30">
+                          <AlertCircle className="w-8 h-8 text-gray-600 mb-2" />
+                          <h5 className="text-xs text-gray-400 font-sans uppercase font-bold tracking-wider text-white">No matching assets found</h5>
+                          <p className="text-[10px] text-gray-500 mt-1 max-w-xs text-center leading-normal">Upload new branding photos or videos to populate this secure storage folder.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-[460px] overflow-y-auto pr-1">
+                        {filtered.map(item => {
+                          const isEditing = editingMediaId === item.id;
+                          return (
+                            <div key={item.id} className="bg-[#0D0D0D] border border-white/5 rounded-lg p-3 flex flex-col justify-between hover:border-[#C5A85D]/30 transition-all shadow">
+                              <div>
+                                {/* Media Thumbnail */}
+                                <div className="aspect-video bg-black rounded overflow-hidden mb-2.5 relative border border-white/10 group flex items-center justify-center">
+                                  {item.fileType === 'video' ? (
+                                    <video
+                                      src={item.fileUrl}
+                                      controls
+                                      className="w-full h-full object-cover"
+                                      preload="metadata"
+                                    />
+                                  ) : (
+                                    <img
+                                      src={item.fileUrl}
+                                      alt={item.title}
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  )}
+                                  <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-mono tracking-wider uppercase bg-black/80 text-gray-300">
+                                    {item.category}
+                                  </div>
+                                </div>
+
+                                {/* EDITING FIELDS OR STATIC DETAILS */}
+                                {isEditing ? (
+                                  <div className="space-y-2 mt-2">
+                                    <input
+                                      type="text"
+                                      value={editingTitle}
+                                      onChange={(e) => setEditingTitle(e.target.value)}
+                                      className="w-full bg-black border border-white/20 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-[#C5A85D]"
+                                    />
+                                    <select
+                                      value={editingCategory}
+                                      onChange={(e: any) => setEditingCategory(e.target.value)}
+                                      className="w-full bg-black border border-white/20 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-[#C5A85D]"
+                                    >
+                                      <option value="images">images/</option>
+                                      <option value="videos">videos/</option>
+                                      <option value="hero-banners">hero-banners/</option>
+                                      <option value="groom-collections">groom-collections/</option>
+                                    </select>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <h5 className="text-white font-sans font-bold text-xs truncate" title={item.title}>
+                                      {item.title}
+                                    </h5>
+                                    <span className="text-[9px] text-gray-500 font-mono block mt-1 truncate" title={item.fileName}>
+                                      {item.fileName}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+
+                              <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between">
+                                <span className="text-[8px] text-gray-500 font-mono">
+                                  {new Date(item.uploadDate).toLocaleDateString()}
+                                </span>
+
+                                <div className="flex items-center space-x-1.5">
+                                  {isEditing ? (
+                                    <>
+                                      <button
+                                        onClick={() => handleSaveEditingMedia(item.id)}
+                                        className="p-1 px-2 bg-[#C5A85D] text-black hover:bg-[#D5B86D] rounded text-[9px] font-sans font-bold uppercase transition-all cursor-pointer"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingMediaId(null)}
+                                        className="p-1 px-2 border border-white/20 text-gray-400 hover:text-white rounded text-[9px] font-sans transition-all cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={() => handleStartEditingMedia(item)}
+                                        className="p-1 border border-white/10 text-gray-400 hover:text-[#C5A85D] hover:border-[#C5A85D]/30 rounded transition-all cursor-pointer"
+                                        title="Edit Title & Category"
+                                      >
+                                        <Sliders className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteMediaAsset(item)}
+                                        className="p-1 border border-red-500/20 text-red-400 hover:text-red-300 hover:bg-red-950/20 rounded transition-all cursor-pointer"
+                                        title="Delete Permanently"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
 
               </div>

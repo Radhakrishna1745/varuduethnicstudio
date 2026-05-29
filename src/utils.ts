@@ -5,8 +5,8 @@
 
 import { CustomerLead, Appointment, ProductCollection, LookbookItem } from './types';
 import { COLLECTIONS, LOOKBOOK_GALLERY } from './data';
-import { collection, doc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { collection, doc, setDoc, updateDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType, uploadToStorage, deleteFromStorage } from './firebase';
 
 // Key for storage
 export const LEADS_KEY = 'varudu_leads';
@@ -249,9 +249,38 @@ export const startLiveSync = () => {
     }
   });
 
+  const unsubscribeSettings = onSnapshot(collection(db, 'settings'), (snapshot) => {
+    const settings: Record<string, any> = {};
+    snapshot.forEach(docSnap => {
+      settings[docSnap.id] = docSnap.data();
+    });
+    localStorage.setItem('varudu_settings', JSON.stringify(settings));
+    window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: settings }));
+  }, (error) => {
+    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
+      console.warn('Settings Sync Error:', error);
+    }
+  });
+
+  const unsubscribeMedia = onSnapshot(collection(db, 'media'), (snapshot) => {
+    const media: any[] = [];
+    snapshot.forEach(docSnap => {
+      media.push(docSnap.data());
+    });
+    media.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+    localStorage.setItem('varudu_media_asset_list', JSON.stringify(media));
+    window.dispatchEvent(new CustomEvent('varudu-media-updated', { detail: media }));
+  }, (error) => {
+    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
+      console.warn('Media Sync Error:', error);
+    }
+  });
+
   return () => {
     unsubscribeLeads();
     unsubscribeAppts();
+    unsubscribeSettings();
+    unsubscribeMedia();
   };
 };
 
@@ -434,6 +463,17 @@ export const DYNAMIC_LOOKBOOK_KEY = 'varudu_lookbook_v1';
 
 export const getDynamicCollections = (): ProductCollection[] => {
   if (typeof window === 'undefined') return COLLECTIONS;
+  try {
+    const storedSettings = localStorage.getItem('varudu_settings');
+    if (storedSettings) {
+      const settings = JSON.parse(storedSettings);
+      if (settings.collections && Array.isArray(settings.collections.list)) {
+        return settings.collections.list;
+      }
+    }
+  } catch (error) {
+    console.warn('Error reading collections from settings cache:', error);
+  }
   const stored = localStorage.getItem(DYNAMIC_COLLECTIONS_KEY);
   if (!stored) {
     localStorage.setItem(DYNAMIC_COLLECTIONS_KEY, JSON.stringify(COLLECTIONS));
@@ -446,10 +486,24 @@ export const saveDynamicCollections = (collections: ProductCollection[]): void =
   if (typeof window === 'undefined') return;
   localStorage.setItem(DYNAMIC_COLLECTIONS_KEY, JSON.stringify(collections));
   window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: collections }));
+  saveSetting('collections', { list: collections }).catch(err => {
+    console.warn('Failed to sync collections count/list with Firestore:', err);
+  });
 };
 
 export const getDynamicLookbook = (): LookbookItem[] => {
   if (typeof window === 'undefined') return LOOKBOOK_GALLERY as LookbookItem[];
+  try {
+    const storedSettings = localStorage.getItem('varudu_settings');
+    if (storedSettings) {
+      const settings = JSON.parse(storedSettings);
+      if (settings.lookbook && Array.isArray(settings.lookbook.list)) {
+        return settings.lookbook.list;
+      }
+    }
+  } catch (error) {
+    console.warn('Error reading lookbook from settings cache:', error);
+  }
   const stored = localStorage.getItem(DYNAMIC_LOOKBOOK_KEY);
   if (!stored) {
     localStorage.setItem(DYNAMIC_LOOKBOOK_KEY, JSON.stringify(LOOKBOOK_GALLERY));
@@ -462,10 +516,42 @@ export const saveDynamicLookbook = (lookbook: LookbookItem[]): void => {
   if (typeof window === 'undefined') return;
   localStorage.setItem(DYNAMIC_LOOKBOOK_KEY, JSON.stringify(lookbook));
   window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: lookbook }));
+  saveSetting('lookbook', { list: lookbook }).catch(err => {
+    console.warn('Failed to sync lookbook list with Firestore:', err);
+  });
+};
+
+// --- SETTINGS STORAGE UTILITIES ---
+export const getCachedSetting = (docId: string, field: string, defaultValue: string): string => {
+  if (typeof window === 'undefined') return defaultValue;
+  try {
+    const stored = localStorage.getItem('varudu_settings');
+    if (stored) {
+      const settings = JSON.parse(stored);
+      if (settings[docId] && settings[docId][field]) {
+        return settings[docId][field];
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading settings cache:', e);
+  }
+  return defaultValue;
+};
+
+export const saveSetting = async (docId: string, data: Record<string, any>) => {
+  try {
+    await setDoc(doc(db, 'settings', docId), data, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `settings/${docId}`);
+  }
 };
 
 // --- DYNAMIC WEB PHOTO CUSTOMIZER UTILITIES ---
 export const getWebPhoto = async (key: string, defaultUrl: string): Promise<string> => {
+  // Try Firebase settings cache first (populated by real-time sync)
+  const cachedUrl = getCachedSetting('web_photos', key, '');
+  if (cachedUrl) return cachedUrl;
+
   try {
     const blob = await getMediaFile(key);
     if (blob) {
@@ -478,11 +564,124 @@ export const getWebPhoto = async (key: string, defaultUrl: string): Promise<stri
 };
 
 export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
+  // Store locally in IndexedDB as a cache/fallback
   await storeMediaFile(key, file);
-  window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key } }));
+  
+  try {
+    // Upload original file to Firebase Storage inside mandated folders
+    const path = `hero-banners/${key}`;
+    const downloadUrl = await uploadToStorage(path, file);
+    
+    // Save mapping in settings Firestore document
+    await saveSetting('web_photos', { [key]: downloadUrl });
+    
+    // Dispatch update event
+    window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key, url: downloadUrl } }));
+  } catch (error) {
+    console.error('Firebase saveWebPhoto failure:', error);
+    // Continue triggering the event using local state
+    window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key } }));
+  }
 };
 
 export const deleteWebPhoto = async (key: string): Promise<void> => {
   await clearMediaFile(key);
+  
+  try {
+    // Remove references in Firestore Settings by setting the key to ""
+    await saveSetting('web_photos', { [key]: "" });
+    
+    // Delete file from Firebase Storage
+    await deleteFromStorage(`hero-banners/${key}`);
+  } catch (error) {
+    console.warn('Failed to delete web photo from Firebase:', error);
+  }
+  
   window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key } }));
+};
+
+
+// --- GENERAL MEDIA MANAGEMENT WORKFLOWS (FIREBASE STORAGE + FIRESTORE) ---
+
+export interface MediaAsset {
+  id: string;
+  title: string;
+  fileName: string;
+  fileUrl: string;
+  uploadDate: string;
+  category: 'images' | 'videos' | 'hero-banners' | 'groom-collections';
+  fileType: 'image' | 'video';
+}
+
+/**
+ * Uploads any image or video to Firebase Storage under the appropriate folder, Name-encoded,
+ * and saves its registration entry in Firestore `/media/{mediaId}`.
+ */
+export const uploadMediaAsset = async (
+  file: File | Blob, 
+  title: string, 
+  category: 'images' | 'videos' | 'hero-banners' | 'groom-collections'
+): Promise<MediaAsset> => {
+  const mediaId = `media-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  
+  // Clean file name
+  const originalName = file instanceof File ? file.name : 'blob';
+  const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  
+  // Format the folder path: folder_prefix/unique_id_cleanName
+  // Prefix folders: images, videos, hero-banners, groom-collections
+  const storagePath = `${category}/${mediaId}_${cleanName}`;
+  const fileUrl = await uploadToStorage(storagePath, file);
+  
+  const fileType = file.type?.startsWith('video/') ? 'video' : 'image';
+  
+  const mediaItem: MediaAsset = {
+    id: mediaId,
+    title: title || originalName.split('.')[0] || 'Untitled Asset',
+    fileName: originalName,
+    fileUrl,
+    uploadDate: new Date().toISOString(),
+    category,
+    fileType
+  };
+  
+  // Save registry in Firestore
+  try {
+    await setDoc(doc(db, 'media', mediaId), mediaItem);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `media/${mediaId}`);
+  }
+  
+  return mediaItem;
+};
+
+/**
+ * Update media item title or category in Firestore.
+ */
+export const updateMediaAssetMetadata = async (
+  mediaId: string, 
+  updates: Partial<{ title: string; category: 'images' | 'videos' | 'hero-banners' | 'groom-collections' }>
+): Promise<void> => {
+  try {
+    await setDoc(doc(db, 'media', mediaId), updates, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `media/${mediaId}`);
+  }
+};
+
+/**
+ * Deletes media item from Firestore registry AND deletes underlying binary from Firebase Storage
+ */
+export const deleteMediaAsset = async (mediaId: string, fileUrl: string, category: string, fileName: string): Promise<void> => {
+  try {
+    // 1. Delete from Firestore
+    await deleteDoc(doc(db, 'media', mediaId));
+    
+    // 2. Delete from Firebase Storage. To find the path, construct from URL or our known schema:
+    const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `${category}/${mediaId}_${cleanName}`;
+    await deleteFromStorage(storagePath);
+  } catch (error) {
+    console.error('Failed to complete delete asset flow:', error);
+  }
 };

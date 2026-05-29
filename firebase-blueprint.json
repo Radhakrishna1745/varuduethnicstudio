@@ -41,6 +41,30 @@
         "adminNotes": { "type": "string" }
       },
       "required": ["id", "branch", "date", "time", "customerName", "customerPhone", "status", "timestamp"]
+    },
+    "SettingsDocument": {
+      "title": "SettingsDocument",
+      "description": "System settings and branding URLs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      },
+      "required": ["id"]
+    },
+    "MediaItem": {
+      "title": "MediaItem",
+      "description": "An uploaded image or video metadata recorded in Firestore",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "uploadDate": { "type": "string" },
+        "category": { "type": "string" },
+        "fileType": { "type": "string" }
+      },
+      "required": ["id", "title", "fileName", "fileUrl", "uploadDate", "category", "fileType"]
     }
   },
   "firestore": {
@@ -51,6 +75,14 @@
     "/appointments/{appointmentId}": {
       "schema": "Appointment",
       "description": "Store booked appointments"
+    },
+    "/settings/{settingId}": {
+      "schema": "SettingsDocument",
+      "description": "Store branding material URLs and web photo customizations"
+    },
+    "/media/{mediaId}": {
+      "schema": "MediaItem",
+      "description": "Admin uploaded files directory log"
     }
   }
 }

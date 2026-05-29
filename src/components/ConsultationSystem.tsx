@@ -5,6 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import { saveLead, playRegalGoldChime } from '../utils';
+import { uploadToStorage } from '../firebase';
 import { Upload, HelpCircle, Check, Sparkles, MessageCircle, AlertCircle, FileText, Smartphone } from 'lucide-react';
 
 interface ConsultationSystemProps {
@@ -66,30 +67,41 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
     
     const interval = setInterval(() => {
       setUploadProgress(prev => {
-        if (prev >= 100) {
+        if (prev >= 90) {
           clearInterval(interval);
-          return 100;
+          return 90;
         }
-        return prev + 30;
+        return prev + 15;
       });
     }, 150);
 
-    const base64Promises = Array.from(files).map(file => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          resolve(reader.result as string);
-        };
-        reader.readAsDataURL(file);
+    const uploadPromises = Array.from(files).map((file, index) => {
+      const fileNameClean = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `leads/reference_${Date.now()}_${index}_${fileNameClean}`;
+      return uploadToStorage(path, file).catch(err => {
+        console.warn('Firebase Storage upload failed, falling back to base64 reader:', err);
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            resolve(reader.result as string);
+          };
+          reader.readAsDataURL(file);
+        });
       });
     });
 
-    Promise.all(base64Promises).then((results) => {
+    Promise.all(uploadPromises).then((results) => {
+      clearInterval(interval);
+      setUploadProgress(100);
       setTimeout(() => {
-        setUploadedImages(prev => [...prev, ...results as string[]]);
+        setUploadedImages(prev => [...prev, ...results]);
         setIsUploading(false);
         setUploadProgress(0);
-      }, 600);
+      }, 500);
+    }).catch(err => {
+      console.error('All upload workflows failed:', err);
+      setIsUploading(false);
+      setUploadProgress(0);
     });
   };
 
