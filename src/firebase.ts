@@ -23,17 +23,9 @@ testConnection();
 
 // Firebase Storage Helpers
 export async function uploadToStorage(path: string, file: Blob | File): Promise<string> {
-  const uploadPromise = (async () => {
-    const fileRef = ref(storage, path);
-    await uploadBytes(fileRef, file);
-    return await getDownloadURL(fileRef);
-  })();
-
-  const timeoutPromise = new Promise<string>((_, reject) =>
-    setTimeout(() => reject(new Error('Upload timed out - using client-side cache fallback')), 2500)
-  );
-
-  return Promise.race([uploadPromise, timeoutPromise]);
+  const fileRef = ref(storage, path);
+  await uploadBytes(fileRef, file);
+  return await getDownloadURL(fileRef);
 }
 
 export async function deleteFromStorage(path: string): Promise<void> {

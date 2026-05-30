@@ -8,7 +8,7 @@ import { COLLECTIONS, LOOKBOOK_GALLERY } from './data';
 import { collection, doc, setDoc, updateDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, uploadToStorage, deleteFromStorage } from './firebase';
 
-// Key for storage
+// Key names kept for backward compatibility if any imports or type dependencies refer to them
 export const LEADS_KEY = 'varudu_leads';
 export const APPOINTMENTS_KEY = 'varudu_appointments';
 
@@ -97,15 +97,17 @@ const MOCK_APPOINTMENTS: Appointment[] = [
   }
 ];
 
+// --- MODULE SCOPED MEMORY STORAGE (NO LOCALSTORAGE OR INDEXEDDB RUNTIME DEPENDENCY) ---
+let _leadsInMemory: CustomerLead[] | null = null;
+let _appointmentsInMemory: Appointment[] | null = null;
+let _settingsInMemory: Record<string, any> = {};
+let _mediaAssetsInMemory: any[] = [];
+
 // Helper to initialize local data
 export const getStoredLeads = (): CustomerLead[] => {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem(LEADS_KEY);
-  if (!stored) {
-    localStorage.setItem(LEADS_KEY, JSON.stringify(MOCK_LEADS));
-    return MOCK_LEADS;
-  }
-  return JSON.parse(stored);
+  if (_leadsInMemory) return _leadsInMemory;
+  _leadsInMemory = [...MOCK_LEADS];
+  return _leadsInMemory;
 };
 
 export const saveLead = (lead: Omit<CustomerLead, 'id' | 'timestamp' | 'status' | 'uploadedImages'>, uploadedImages: string[] = []): CustomerLead => {
@@ -120,7 +122,7 @@ export const saveLead = (lead: Omit<CustomerLead, 'id' | 'timestamp' | 'status' 
     ]
   };
   leads.unshift(newLead);
-  localStorage.setItem(LEADS_KEY, JSON.stringify(leads));
+  _leadsInMemory = leads;
 
   // Sync to live Firestore in background
   setDoc(doc(db, 'leads', newLead.id), newLead).catch(error => {
@@ -129,6 +131,7 @@ export const saveLead = (lead: Omit<CustomerLead, 'id' | 'timestamp' | 'status' 
 
   // Trigger Custom Realtime Event
   window.dispatchEvent(new CustomEvent('varudu-lead-submitted', { detail: newLead }));
+  window.dispatchEvent(new CustomEvent('varudu-lead-updated'));
   
   return newLead;
 };
@@ -144,7 +147,7 @@ export const updateLeadStatus = (id: string, status: CustomerLead['status'], adm
     }
     return l;
   });
-  localStorage.setItem(LEADS_KEY, JSON.stringify(updated));
+  _leadsInMemory = updated;
 
   // Sync update to Firebase in background
   if (updatedDoc) {
@@ -158,13 +161,9 @@ export const updateLeadStatus = (id: string, status: CustomerLead['status'], adm
 };
 
 export const getStoredAppointments = (): Appointment[] => {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem(APPOINTMENTS_KEY);
-  if (!stored) {
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(MOCK_APPOINTMENTS));
-    return MOCK_APPOINTMENTS;
-  }
-  return JSON.parse(stored);
+  if (_appointmentsInMemory) return _appointmentsInMemory;
+  _appointmentsInMemory = [...MOCK_APPOINTMENTS];
+  return _appointmentsInMemory;
 };
 
 export const saveAppointment = (appointment: Omit<Appointment, 'id' | 'timestamp' | 'status'>): Appointment => {
@@ -176,7 +175,7 @@ export const saveAppointment = (appointment: Omit<Appointment, 'id' | 'timestamp
     status: 'Pending'
   };
   appts.unshift(newAppt);
-  localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appts));
+  _appointmentsInMemory = appts;
 
   // Sync to live Firestore in background
   setDoc(doc(db, 'appointments', newAppt.id), newAppt).catch(error => {
@@ -185,6 +184,7 @@ export const saveAppointment = (appointment: Omit<Appointment, 'id' | 'timestamp
 
   // Trigger Custom Realtime Event
   window.dispatchEvent(new CustomEvent('varudu-appointment-booked', { detail: newAppt }));
+  window.dispatchEvent(new CustomEvent('varudu-appointment-updated'));
   
   return newAppt;
 };
@@ -200,7 +200,7 @@ export const updateAppointmentStatus = (id: string, status: Appointment['status'
     }
     return a;
   });
-  localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
+  _appointmentsInMemory = updated;
 
   // Sync update to Firebase in background
   if (updatedDoc) {
@@ -224,8 +224,8 @@ export const startLiveSync = () => {
     });
     if (leads.length > 0) {
       leads.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      localStorage.setItem(LEADS_KEY, JSON.stringify(leads));
-      window.dispatchEvent(new CustomEvent('varudu-lead-updated'));
+      _leadsInMemory = leads;
+      window.dispatchEvent(new CustomEvent('varudu-lead-updated', { detail: leads }));
     }
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
@@ -240,8 +240,8 @@ export const startLiveSync = () => {
     });
     if (appts.length > 0) {
       appts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appts));
-      window.dispatchEvent(new CustomEvent('varudu-appointment-updated'));
+      _appointmentsInMemory = appts;
+      window.dispatchEvent(new CustomEvent('varudu-appointment-updated', { detail: appts }));
     }
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
@@ -254,8 +254,14 @@ export const startLiveSync = () => {
     snapshot.forEach(docSnap => {
       settings[docSnap.id] = docSnap.data();
     });
-    localStorage.setItem('varudu_settings', JSON.stringify(settings));
+    _settingsInMemory = settings;
     window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: settings }));
+    if (settings.collections && Array.isArray(settings.collections.list)) {
+      window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: settings.collections.list }));
+    }
+    if (settings.lookbook && Array.isArray(settings.lookbook.list)) {
+      window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: settings.lookbook.list }));
+    }
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
       console.warn('Settings Sync Error:', error);
@@ -268,7 +274,7 @@ export const startLiveSync = () => {
       media.push(docSnap.data());
     });
     media.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
-    localStorage.setItem('varudu_media_asset_list', JSON.stringify(media));
+    _mediaAssetsInMemory = media;
     window.dispatchEvent(new CustomEvent('varudu-media-updated', { detail: media }));
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
@@ -400,108 +406,23 @@ export const getGroomStructuredSchema = () => {
   };
 };
 
-// --- PERSISTENT BROADCAST MEDIA DATABASE (INDEXED DB) ---
-export const MEDIA_STORE_NAME = 'video_store';
-export const MEDIA_DB_NAME = 'VaruduMediaDB';
-export const MEDIA_DB_VERSION = 1;
-
-export const initMediaDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      reject(new Error('IndexedDB not supported in current environment.'));
-      return;
-    }
-    try {
-      const request = indexedDB.open(MEDIA_DB_NAME, MEDIA_DB_VERSION);
-      request.onupgradeneeded = (e) => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(MEDIA_STORE_NAME)) {
-          db.createObjectStore(MEDIA_STORE_NAME);
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error('Failed to open database'));
-    } catch (err) {
-      reject(err);
-    }
-  });
-};
-
-export const storeMediaFile = async (key: string, file: Blob): Promise<void> => {
-  try {
-    const db = await initMediaDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
-      const store = tx.objectStore(MEDIA_STORE_NAME);
-      const request = store.put(file, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || new Error('Put transaction failed'));
-    });
-  } catch (err) {
-    console.warn('IndexedDB write bypassed in sandboxed environment. Relying on cloud synchronization.', err);
-  }
-};
-
-export const getMediaFile = async (key: string): Promise<Blob | null> => {
-  try {
-    const db = await initMediaDB();
-    const result = await new Promise<Blob | null>((resolve, reject) => {
-      const tx = db.transaction(MEDIA_STORE_NAME, 'readonly');
-      const store = tx.objectStore(MEDIA_STORE_NAME);
-      const request = store.get(key);
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error || new Error('Get transaction failed'));
-    });
-    return result;
-  } catch (e) {
-    console.warn('Error reading from IndexedDB:', e);
-    return null;
-  }
-};
-
-export const clearMediaFile = async (key: string): Promise<void> => {
-  try {
-    const db = await initMediaDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
-      const store = tx.objectStore(MEDIA_STORE_NAME);
-      const request = store.delete(key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || new Error('Delete transaction failed'));
-    });
-  } catch (err) {
-    console.warn('IndexedDB clear operation bypassed in sandboxed environment.', err);
-  }
-};
-
-// --- DYNAMIC CATALOGUE & EDITABLE PRODUCTS STORAGE ---
+// --- DYNAMIC CATALOGUE & EDITABLE PRODUCTS STORAGE (PURE DISKLESS MEMORY + FIRESTORE SNAPSHOT) ---
 export const DYNAMIC_COLLECTIONS_KEY = 'varudu_collections_v1';
 export const DYNAMIC_LOOKBOOK_KEY = 'varudu_lookbook_v1';
 
 export const getDynamicCollections = (): ProductCollection[] => {
-  if (typeof window === 'undefined') return COLLECTIONS;
-  try {
-    const storedSettings = localStorage.getItem('varudu_settings');
-    if (storedSettings) {
-      const settings = JSON.parse(storedSettings);
-      if (settings.collections && Array.isArray(settings.collections.list)) {
-        return settings.collections.list;
-      }
-    }
-  } catch (error) {
-    console.warn('Error reading collections from settings cache:', error);
+  if (_settingsInMemory.collections && Array.isArray(_settingsInMemory.collections.list)) {
+    return _settingsInMemory.collections.list;
   }
-  const stored = localStorage.getItem(DYNAMIC_COLLECTIONS_KEY);
-  if (!stored) {
-    localStorage.setItem(DYNAMIC_COLLECTIONS_KEY, JSON.stringify(COLLECTIONS));
-    return COLLECTIONS;
-  }
-  return JSON.parse(stored);
+  return COLLECTIONS;
 };
 
 export const saveDynamicCollections = (collections: ProductCollection[]): void => {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(DYNAMIC_COLLECTIONS_KEY, JSON.stringify(collections));
+  if (!_settingsInMemory.collections) {
+    _settingsInMemory.collections = {};
+  }
+  _settingsInMemory.collections.list = collections;
   window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: collections }));
   saveSetting('collections', { list: collections }).catch(err => {
     console.warn('Failed to sync collections count/list with Firestore:', err);
@@ -509,29 +430,18 @@ export const saveDynamicCollections = (collections: ProductCollection[]): void =
 };
 
 export const getDynamicLookbook = (): LookbookItem[] => {
-  if (typeof window === 'undefined') return LOOKBOOK_GALLERY as LookbookItem[];
-  try {
-    const storedSettings = localStorage.getItem('varudu_settings');
-    if (storedSettings) {
-      const settings = JSON.parse(storedSettings);
-      if (settings.lookbook && Array.isArray(settings.lookbook.list)) {
-        return settings.lookbook.list;
-      }
-    }
-  } catch (error) {
-    console.warn('Error reading lookbook from settings cache:', error);
+  if (_settingsInMemory.lookbook && Array.isArray(_settingsInMemory.lookbook.list)) {
+    return _settingsInMemory.lookbook.list;
   }
-  const stored = localStorage.getItem(DYNAMIC_LOOKBOOK_KEY);
-  if (!stored) {
-    localStorage.setItem(DYNAMIC_LOOKBOOK_KEY, JSON.stringify(LOOKBOOK_GALLERY));
-    return LOOKBOOK_GALLERY as LookbookItem[];
-  }
-  return JSON.parse(stored);
+  return LOOKBOOK_GALLERY as LookbookItem[];
 };
 
 export const saveDynamicLookbook = (lookbook: LookbookItem[]): void => {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(DYNAMIC_LOOKBOOK_KEY, JSON.stringify(lookbook));
+  if (!_settingsInMemory.lookbook) {
+    _settingsInMemory.lookbook = {};
+  }
+  _settingsInMemory.lookbook.list = lookbook;
   window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: lookbook }));
   saveSetting('lookbook', { list: lookbook }).catch(err => {
     console.warn('Failed to sync lookbook list with Firestore:', err);
@@ -540,35 +450,25 @@ export const saveDynamicLookbook = (lookbook: LookbookItem[]): void => {
 
 // --- SETTINGS STORAGE UTILITIES ---
 export const getCachedSetting = (docId: string, field: string, defaultValue: string): string => {
-  if (typeof window === 'undefined') return defaultValue;
-  try {
-    const stored = localStorage.getItem('varudu_settings');
-    if (stored) {
-      const settings = JSON.parse(stored);
-      if (settings[docId] && settings[docId][field]) {
-        return settings[docId][field];
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading settings cache:', e);
+  if (_settingsInMemory[docId] && _settingsInMemory[docId][field]) {
+    return _settingsInMemory[docId][field];
   }
   return defaultValue;
 };
 
 export const saveSetting = async (docId: string, data: Record<string, any>) => {
   try {
-    // 1. Instantly write to the local cache and fire event so the active client gets immediate reactive update
-    try {
-      const stored = localStorage.getItem('varudu_settings');
-      const settings = stored ? JSON.parse(stored) : {};
-      settings[docId] = { ...(settings[docId] || {}), ...data };
-      localStorage.setItem('varudu_settings', JSON.stringify(settings));
-      window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: settings }));
-    } catch (cacheErr) {
-      console.warn('Cache write issue inside saveSetting:', cacheErr);
+    _settingsInMemory[docId] = { ...(_settingsInMemory[docId] || {}), ...data };
+    window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: _settingsInMemory }));
+    
+    // Propagate individual catalog changes immediately to maintain perfect synchronization
+    if (docId === 'collections' && data.list) {
+      window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: data.list }));
+    }
+    if (docId === 'lookbook' && data.list) {
+      window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: data.list }));
     }
 
-    // 2. Transmit to Cloud Firestore database
     await setDoc(doc(db, 'settings', docId), data, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `settings/${docId}`);
@@ -577,27 +477,14 @@ export const saveSetting = async (docId: string, data: Record<string, any>) => {
 
 // --- DYNAMIC WEB PHOTO CUSTOMIZER UTILITIES ---
 export const getWebPhoto = async (key: string, defaultUrl: string): Promise<string> => {
-  // Try Firebase settings cache first (populated by real-time sync)
+  // Grab URL directly from synced settings
   const cachedUrl = getCachedSetting('web_photos', key, '');
   if (cachedUrl) return cachedUrl;
-
-  try {
-    const blob = await getMediaFile(key);
-    if (blob) {
-      return URL.createObjectURL(blob);
-    }
-  } catch (error) {
-    console.warn('Error reading web photo from IndexedDB:', error);
-  }
   return defaultUrl;
 };
 
 export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
-  // Store locally in IndexedDB as a cache/fallback
-  await storeMediaFile(key, file);
-  
   try {
-    // Upload original file to Firebase Storage inside mandated folders
     const path = `hero-banners/${key}`;
     const downloadUrl = await uploadToStorage(path, file);
     
@@ -608,24 +495,19 @@ export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
     window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key, url: downloadUrl } }));
   } catch (error) {
     console.error('Firebase saveWebPhoto failure:', error);
-    // Continue triggering the event using local state
-    window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key } }));
+    throw error;
   }
 };
 
 export const deleteWebPhoto = async (key: string): Promise<void> => {
-  await clearMediaFile(key);
-  
   try {
     // Remove references in Firestore Settings by setting the key to ""
     await saveSetting('web_photos', { [key]: "" });
-    
     // Delete file from Firebase Storage
     await deleteFromStorage(`hero-banners/${key}`);
   } catch (error) {
     console.warn('Failed to delete web photo from Firebase:', error);
   }
-  
   window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key } }));
 };
 
@@ -658,7 +540,6 @@ export const uploadMediaAsset = async (
   const cleanName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
   
   // Format the folder path: folder_prefix/unique_id_cleanName
-  // Prefix folders: images, videos, hero-banners, groom-collections
   const storagePath = `${category}/${mediaId}_${cleanName}`;
   const fileUrl = await uploadToStorage(storagePath, file);
   
@@ -706,7 +587,7 @@ export const deleteMediaAsset = async (mediaId: string, fileUrl: string, categor
     // 1. Delete from Firestore
     await deleteDoc(doc(db, 'media', mediaId));
     
-    // 2. Delete from Firebase Storage. To find the path, construct from URL or our known schema:
+    // 2. Delete from Firebase Storage
     const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storagePath = `${category}/${mediaId}_${cleanName}`;
     await deleteFromStorage(storagePath);

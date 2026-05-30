@@ -6,9 +6,9 @@
 import React, { useState, useEffect } from 'react';
 import { ProductCollection } from '../types';
 import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film } from 'lucide-react';
-import { getDynamicCollections, getMediaFile } from '../utils';
+import { getDynamicCollections } from '../utils';
 
-// Dynamic Asset Renderer supporting photo & loop videos from IndexedDB or static URLs
+// Dynamic Asset Renderer supporting photo & loop videos from static URLs
 interface IndexedAssetProps {
   src: string;
   videoSrc?: string;
@@ -18,64 +18,10 @@ interface IndexedAssetProps {
 }
 
 export function IndexedAsset({ src, videoSrc, alt, className = "", isBackgroundLoop = false }: IndexedAssetProps) {
-  const [resolvedSrc, setResolvedSrc] = useState<string>('');
-  const [resolvedVideoSrc, setResolvedVideoSrc] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    let urlToRevoke = '';
-    let videoUrlToRevoke = '';
-
-    async function load() {
-      // Resolve Image
-      if (src.startsWith('indexeddb:')) {
-        const key = src.replace('indexeddb:', '');
-        const blob = await getMediaFile(key);
-        if (blob && active) {
-          urlToRevoke = URL.createObjectURL(blob);
-          setResolvedSrc(urlToRevoke);
-        } else if (active) {
-          setResolvedSrc('https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=800'); // fallback
-        }
-      } else {
-        setResolvedSrc(src);
-      }
-
-      // Resolve Video (if exists)
-      if (videoSrc) {
-        if (videoSrc.startsWith('indexeddb:')) {
-          const key = videoSrc.replace('indexeddb:', '');
-          const blob = await getMediaFile(key);
-          if (blob && active) {
-            videoUrlToRevoke = URL.createObjectURL(blob);
-            setResolvedVideoSrc(videoUrlToRevoke);
-          }
-        } else {
-          setResolvedVideoSrc(videoSrc);
-        }
-      }
-
-      if (active) setLoading(false);
-    }
-
-    load();
-
-    return () => {
-      active = false;
-      if (urlToRevoke) URL.revokeObjectURL(urlToRevoke);
-      if (videoUrlToRevoke) URL.revokeObjectURL(videoUrlToRevoke);
-    };
-  }, [src, videoSrc]);
-
-  if (loading) {
-    return (
-      <div className="w-full h-full bg-[#121212] animate-pulse flex flex-col items-center justify-center text-[10px] text-gray-500 font-sans tracking-widest uppercase">
-        <div className="w-6 h-6 rounded-full border border-t-[#C5A85D] border-white/5 animate-spin mb-2" />
-        <span>Developing Fabric...</span>
-      </div>
-    );
-  }
+  const resolvedSrc = src.startsWith('indexeddb:')
+    ? 'https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=800'
+    : src;
+  const resolvedVideoSrc = videoSrc && videoSrc.startsWith('indexeddb:') ? '' : videoSrc;
 
   if (resolvedVideoSrc && isBackgroundLoop) {
     return (

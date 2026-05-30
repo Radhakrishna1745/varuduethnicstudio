@@ -9,7 +9,6 @@ import {
   getStoredLeads, updateLeadStatus, 
   getStoredAppointments, updateAppointmentStatus,
   playRegalGoldChime,
-  storeMediaFile, getMediaFile, clearMediaFile,
   getDynamicCollections, saveDynamicCollections,
   getDynamicLookbook, saveDynamicLookbook,
   getWebPhoto, saveWebPhoto, deleteWebPhoto,
@@ -169,27 +168,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
       const targetId = editingProduct ? editingProduct.id : `prod-${Date.now()}`;
 
-      // Store in IndexedDB cache and upload to Firebase Storage
       if (prodImgFile) {
-        const key = `prod_img_${targetId}`;
-        await storeMediaFile(key, prodImgFile);
-        try {
-          const downloadUrl = await uploadToStorage(`products/images/${targetId}`, prodImgFile);
-          finalImgUrl = downloadUrl;
-        } catch (_) {
-          finalImgUrl = `indexeddb:${key}`;
-        }
+        const downloadUrl = await uploadToStorage(`products/images/${targetId}`, prodImgFile);
+        finalImgUrl = downloadUrl;
       }
 
       if (prodVidFile) {
-        const key = `prod_vid_${targetId}`;
-        await storeMediaFile(key, prodVidFile);
-        try {
-          const downloadUrl = await uploadToStorage(`products/videos/${targetId}`, prodVidFile);
-          finalVidUrl = downloadUrl;
-        } catch (_) {
-          finalVidUrl = `indexeddb:${key}`;
-        }
+        const downloadUrl = await uploadToStorage(`products/videos/${targetId}`, prodVidFile);
+        finalVidUrl = downloadUrl;
       }
 
       const tagsArray = prodTags ? prodTags.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -241,10 +227,6 @@ export default function AdminCRM({ onClose }: CRMProps) {
         const updated = collectionsList.filter(p => p.id !== id);
         saveDynamicCollections(updated);
         setCollectionsList(updated);
-        try {
-          clearMediaFile(`prod_img_${id}`);
-          clearMediaFile(`prod_vid_${id}`);
-        } catch (_) {}
         playRegalGoldChime();
       }
     );
@@ -262,27 +244,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
       let finalImgUrl = editingLookbook ? editingLookbook.imageUrl : 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
       let finalVidUrl = editingLookbook ? editingLookbook.videoUrl || '' : '';
 
-      // Store in IndexedDB cache and upload to Firebase Storage
       if (lkImgFile) {
-        const key = `lk_img_${targetId}`;
-        await storeMediaFile(key, lkImgFile);
-        try {
-          const downloadUrl = await uploadToStorage(`lookbook/images/${targetId}`, lkImgFile);
-          finalImgUrl = downloadUrl;
-        } catch (_) {
-          finalImgUrl = `indexeddb:${key}`;
-        }
+        const downloadUrl = await uploadToStorage(`lookbook/images/${targetId}`, lkImgFile);
+        finalImgUrl = downloadUrl;
       }
 
       if (lkVidFile) {
-        const key = `lk_vid_${targetId}`;
-        await storeMediaFile(key, lkVidFile);
-        try {
-          const downloadUrl = await uploadToStorage(`lookbook/videos/${targetId}`, lkVidFile);
-          finalVidUrl = downloadUrl;
-        } catch (_) {
-          finalVidUrl = `indexeddb:${key}`;
-        }
+        const downloadUrl = await uploadToStorage(`lookbook/videos/${targetId}`, lkVidFile);
+        finalVidUrl = downloadUrl;
       }
 
       const newLook: LookbookItem = {
@@ -328,10 +297,6 @@ export default function AdminCRM({ onClose }: CRMProps) {
         const updated = lookbookList.filter(l => l.id !== id);
         saveDynamicLookbook(updated);
         setLookbookList(updated);
-        try {
-          clearMediaFile(`lk_img_${id}`);
-          clearMediaFile(`lk_vid_${id}`);
-        } catch (_) {}
         playRegalGoldChime();
       }
     );
@@ -493,15 +458,9 @@ export default function AdminCRM({ onClose }: CRMProps) {
         const cachedUrl = getCachedSetting('brand', 'brand_logo_video', '');
         if (cachedUrl) {
           setAdminVideoUrl(cachedUrl);
-        } else {
-          const blob = await getMediaFile('brand_logo_video');
-          if (blob) {
-            setAdminVideoBlob(blob);
-            setAdminVideoUrl(URL.createObjectURL(blob));
-          }
         }
       } catch (e) {
-        console.warn('Error reading from IndexedDB:', e);
+        console.warn('Error reading from brand video logo:', e);
       }
     }
     loadStoredVideo();
@@ -523,28 +482,16 @@ export default function AdminCRM({ onClose }: CRMProps) {
       const cached2 = getCachedSetting('web_photos', 'web_photo_hero_2', '');
       const cachedLegacy = getCachedSetting('web_photos', 'web_photo_legacy', '');
 
-      const blob0 = await getMediaFile('web_photo_hero_0');
-      const blob1 = await getMediaFile('web_photo_hero_1');
-      const blob2 = await getMediaFile('web_photo_hero_2');
-      const legacyBlob = await getMediaFile('web_photo_legacy');
-
-      setHasCustomHero0(!!cached0 || !!blob0);
-      setHasCustomHero1(!!cached1 || !!blob1);
-      setHasCustomHero2(!!cached2 || !!blob2);
-      setHasCustomLegacy(!!cachedLegacy || !!legacyBlob);
+      setHasCustomHero0(!!cached0);
+      setHasCustomHero1(!!cached1);
+      setHasCustomHero2(!!cached2);
+      setHasCustomLegacy(!!cachedLegacy);
     }
     loadWebPhotos();
 
     // Load general media assets list
     const loadCachedMedia = () => {
-      try {
-        const stored = localStorage.getItem('varudu_media_asset_list');
-        if (stored) {
-          setMediaAssets(JSON.parse(stored));
-        }
-      } catch (err) {
-        console.warn('Error loading media assets cache:', err);
-      }
+      // Direct empty start, populated via live realtime event listeners
     };
     loadCachedMedia();
 
@@ -637,14 +584,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const handlePurgeCache = async () => {
     try {
       setIsPurgingCache(true);
-      setMediaUploadSuccess('Purging IndexedDB structures and memory buffer blocks...');
-      
-      // Clear specific assets locally 
-      await clearMediaFile('brand_logo_video');
-      await clearMediaFile('web_photo_hero_0');
-      await clearMediaFile('web_photo_hero_1');
-      await clearMediaFile('web_photo_hero_2');
-      await clearMediaFile('web_photo_legacy');
+      setMediaUploadSuccess('Resetting in-memory blocks...');
       
       // Reset local flags
       setHasCustomHero0(false);
@@ -652,17 +592,15 @@ export default function AdminCRM({ onClose }: CRMProps) {
       setHasCustomHero2(false);
       setHasCustomLegacy(false);
       
-      localStorage.clear();
-      
-      setMediaUploadSuccess('System cache purged! Instantly re-requesting fresh configurations from cloud database CDN...');
+      setMediaUploadSuccess('Memory reset! Reloading application config from Firebase...');
       playRegalGoldChime();
       
       setTimeout(() => {
         window.location.reload();
-      }, 1500);
+      }, 1000);
     } catch (err: any) {
       console.error(err);
-      showCustomAlert('Purge Failed', 'Cache purge failed: ' + err.message);
+      showCustomAlert('Purge Failed', 'Cache reset failed: ' + err.message);
     } finally {
       setIsPurgingCache(false);
     }
@@ -748,10 +686,6 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
 
     try {
-      // 1. Store locally in IndexedDB as a cache/fallback
-      await storeMediaFile('brand_logo_video', file);
-      
-      // 2. Upload to Firebase Storage in videos/
       setMediaUploadSuccess('Processing video encoding and transmitting to Firebase Storage...');
       const downloadUrl = await uploadToStorage('videos/brand_logo_video', file);
       
@@ -770,16 +704,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
       playRegalGoldChime();
     } catch (err) {
       console.error('Failed to save branding video to Firebase Storage:', err);
-      // Fallback to local
-      try {
-        await storeMediaFile('brand_logo_video', file);
-        const url = URL.createObjectURL(file);
-        setAdminVideoUrl(url);
-        setAdminVideoBlob(file);
-        setMediaUploadSuccess(`Uploaded local fallback: "${file.name}". Note: Visitors won't see this unless uploaded successfully to cloud.`);
-      } catch (innerErr) {
-        showCustomAlert('Storage Failed', 'Failed to store video: ' + (err instanceof Error ? err.message : String(err)));
-      }
+      showCustomAlert('Storage Failed', 'Failed to store video in Firebase Storage: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -804,7 +729,6 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
   const handleClearMedia = async () => {
     try {
-      await clearMediaFile('brand_logo_video');
       await saveSetting('brand', { brand_logo_video: "" });
       try {
         await deleteFromStorage('videos/brand_logo_video');

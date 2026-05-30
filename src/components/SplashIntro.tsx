@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Volume2, VolumeX, Sparkles, SkipForward, Swords, Film, Upload } from 'lucide-react';
-import { getMediaFile, playRegalGoldChime, getCachedSetting } from '../utils';
+import { playRegalGoldChime, getCachedSetting } from '../utils';
 
 interface SplashIntroProps {
   onComplete: () => void;
@@ -24,20 +24,13 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
   useEffect(() => {
     let active = true;
 
-    // Attempt to load the custom video logo from Firebase Storage or IndexedDB fallback
+    // Attempt to load the custom video logo from Firebase Storage
     async function loadCustomVideo() {
       try {
         const firebaseVideoUrl = getCachedSetting('brand', 'brand_logo_video', '');
         if (firebaseVideoUrl) {
           if (active) {
             setVideoBlobUrl(firebaseVideoUrl);
-            setHasVideo(true);
-          }
-        } else {
-          const blob = await getMediaFile('brand_logo_video');
-          if (blob && active) {
-            const url = URL.createObjectURL(blob);
-            setVideoBlobUrl(url);
             setHasVideo(true);
           }
         }
