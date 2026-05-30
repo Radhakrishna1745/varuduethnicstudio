@@ -287,6 +287,10 @@ export const startLiveSync = () => {
 // Play a premium crystal gold warning/chime buzzer
 export const playRegalGoldChime = () => {
   try {
+    // Check if user disabled sound effects in the administrative brand settings
+    const isDisabled = getCachedSetting('brand', 'sound_effects_disabled', 'false') === 'true';
+    if (isDisabled) return;
+
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
     
@@ -407,39 +411,48 @@ export const initMediaDB = (): Promise<IDBDatabase> => {
       reject(new Error('IndexedDB not supported in current environment.'));
       return;
     }
-    const request = indexedDB.open(MEDIA_DB_NAME, MEDIA_DB_VERSION);
-    request.onupgradeneeded = (e) => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(MEDIA_STORE_NAME)) {
-        db.createObjectStore(MEDIA_STORE_NAME);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    try {
+      const request = indexedDB.open(MEDIA_DB_NAME, MEDIA_DB_VERSION);
+      request.onupgradeneeded = (e) => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(MEDIA_STORE_NAME)) {
+          db.createObjectStore(MEDIA_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Failed to open database'));
+    } catch (err) {
+      reject(err);
+    }
   });
 };
 
 export const storeMediaFile = async (key: string, file: Blob): Promise<void> => {
-  const db = await initMediaDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
-    const store = tx.objectStore(MEDIA_STORE_NAME);
-    const request = store.put(file, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  try {
+    const db = await initMediaDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(MEDIA_STORE_NAME);
+      const request = store.put(file, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Put transaction failed'));
+    });
+  } catch (err) {
+    console.warn('IndexedDB write bypassed in sandboxed environment. Relying on cloud synchronization.', err);
+  }
 };
 
 export const getMediaFile = async (key: string): Promise<Blob | null> => {
   try {
     const db = await initMediaDB();
-    return new Promise((resolve, reject) => {
+    const result = await new Promise<Blob | null>((resolve, reject) => {
       const tx = db.transaction(MEDIA_STORE_NAME, 'readonly');
       const store = tx.objectStore(MEDIA_STORE_NAME);
       const request = store.get(key);
       request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
+      request.onerror = () => reject(request.error || new Error('Get transaction failed'));
     });
+    return result;
   } catch (e) {
     console.warn('Error reading from IndexedDB:', e);
     return null;
@@ -447,14 +460,18 @@ export const getMediaFile = async (key: string): Promise<Blob | null> => {
 };
 
 export const clearMediaFile = async (key: string): Promise<void> => {
-  const db = await initMediaDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
-    const store = tx.objectStore(MEDIA_STORE_NAME);
-    const request = store.delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  try {
+    const db = await initMediaDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(MEDIA_STORE_NAME);
+      const request = store.delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Delete transaction failed'));
+    });
+  } catch (err) {
+    console.warn('IndexedDB clear operation bypassed in sandboxed environment.', err);
+  }
 };
 
 // --- DYNAMIC CATALOGUE & EDITABLE PRODUCTS STORAGE ---
@@ -540,6 +557,18 @@ export const getCachedSetting = (docId: string, field: string, defaultValue: str
 
 export const saveSetting = async (docId: string, data: Record<string, any>) => {
   try {
+    // 1. Instantly write to the local cache and fire event so the active client gets immediate reactive update
+    try {
+      const stored = localStorage.getItem('varudu_settings');
+      const settings = stored ? JSON.parse(stored) : {};
+      settings[docId] = { ...(settings[docId] || {}), ...data };
+      localStorage.setItem('varudu_settings', JSON.stringify(settings));
+      window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: settings }));
+    } catch (cacheErr) {
+      console.warn('Cache write issue inside saveSetting:', cacheErr);
+    }
+
+    // 2. Transmit to Cloud Firestore database
     await setDoc(doc(db, 'settings', docId), data, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `settings/${docId}`);

@@ -22,16 +22,20 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
+    let active = true;
+
     // Attempt to load the custom video logo from Firebase Storage or IndexedDB fallback
     async function loadCustomVideo() {
       try {
         const firebaseVideoUrl = getCachedSetting('brand', 'brand_logo_video', '');
         if (firebaseVideoUrl) {
-          setVideoBlobUrl(firebaseVideoUrl);
-          setHasVideo(true);
+          if (active) {
+            setVideoBlobUrl(firebaseVideoUrl);
+            setHasVideo(true);
+          }
         } else {
           const blob = await getMediaFile('brand_logo_video');
-          if (blob) {
+          if (blob && active) {
             const url = URL.createObjectURL(blob);
             setVideoBlobUrl(url);
             setHasVideo(true);
@@ -40,25 +44,54 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
       } catch (err) {
         console.warn('Could not read logo video from database, falling back to CSS animation:', err);
       } finally {
-        setLoading(false);
-        // Trigger animations
-        setTimeout(() => {
-          setAnimTriggered(true);
-          // Play the elegant chime sound
-          playRegalGoldChime();
-        }, 300);
-        
-        setTimeout(() => {
-          setShowSparks(true);
-        }, 1200);
+        if (active) {
+          setLoading(false);
+          // Trigger animations
+          setTimeout(() => {
+            if (active) {
+              setAnimTriggered(true);
+              // Play the elegant chime sound
+              playRegalGoldChime();
+            }
+          }, 300);
+          
+          setTimeout(() => {
+            if (active) setShowSparks(true);
+          }, 1200);
+
+          // Dynamic auto-dismiss timeout from Stylist curation desk
+          const rawDuration = getCachedSetting('brand', 'intro_duration', '7');
+          if (rawDuration !== 'full') {
+            const numSecs = parseInt(rawDuration, 10) || 7;
+            setTimeout(() => {
+              if (active) {
+                handleFinished();
+              }
+            }, numSecs * 1000);
+          }
+        }
       }
     }
     loadCustomVideo();
 
-    return () => {
-      if (videoBlobUrl) {
-        URL.revokeObjectURL(videoBlobUrl);
+    const handleSettingsUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const settings = customEvent.detail;
+      if (settings && settings.brand && settings.brand.brand_logo_video) {
+        if (active) {
+          setVideoBlobUrl(settings.brand.brand_logo_video);
+          setHasVideo(true);
+        }
       }
+    };
+
+    window.addEventListener('varudu-settings-updated', handleSettingsUpdate as EventListener);
+    window.addEventListener('varudu-photo-updated', loadCustomVideo);
+
+    return () => {
+      active = false;
+      window.removeEventListener('varudu-settings-updated', handleSettingsUpdate as EventListener);
+      window.removeEventListener('varudu-photo-updated', loadCustomVideo);
     };
   }, []);
 
