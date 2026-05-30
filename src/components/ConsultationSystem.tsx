@@ -149,7 +149,7 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
 
     // Prepare robust WhatsApp text notification template to notify the showroom owner
     const text = `*NEW GROOM CONSULTATION INQUIRY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Groom Name:* ${payload.name}\n📞 *Phone Number:* ${payload.phone}\n📧 *Email:* ${payload.email}\n📅 *Wedding Date:* ${payload.weddingDate || 'Not specified'}\n🏛️ *Occasion Type:* ${payload.occasion}\n💎 *Budget Tier:* ${payload.budget.toUpperCase()}\n🎨 *Preferred Colors:* ${payload.preferredColors.join(', ')}\n👔 *Style Prefs:* ${payload.preferredStyles.join(', ')}\n📝 *Client Notes:* ${payload.notes || 'No extra notes.'}\n━━━━━━━━━━━━━━━━━━━━\n✨ _Submitted instantly with live Firebase database backup!_`;
-    const whatsappUrl = `https://wa.me/919505122400?text=${encodeURIComponent(text)}`;
+    const whatsappUrl = `https://wa.me/919000777265?text=${encodeURIComponent(text)}`;
     
     // Automatically open WhatsApp in background to log the lead notification directly to owner
     setTimeout(() => {
@@ -176,7 +176,7 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
   const getWhatsAppURILink = () => {
     if (!submittedLead) return '#';
     const text = `*NEW GROOM CONSULTATION INQUIRY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Groom Name:* ${submittedLead.name}\n📞 *Phone Number:* ${submittedLead.phone}\n📅 *Wedding Date:* ${submittedLead.weddingDate}\n🏛️ *Occasion Type:* ${submittedLead.occasion}\n💎 *Budget Tier:* ${submittedLead.budget.toUpperCase()}\n🎨 *Preferred Colors:* ${submittedLead.preferredColors.join(', ')}\n👔 *Style Prefs:* ${submittedLead.preferredStyles.join(', ')}\n📝 *Client Notes:* ${submittedLead.notes || 'No extra notes.'}\n━━━━━━━━━━━━━━━━━━━━\n✨ _Submitted instantly from Royal Applet. Status Set: NEW._`;
-    return `https://wa.me/919505122400?text=${encodeURIComponent(text)}`;
+    return `https://wa.me/919000777265?text=${encodeURIComponent(text)}`;
   };
 
   return (

@@ -448,6 +448,183 @@ export const saveDynamicLookbook = (lookbook: LookbookItem[]): void => {
   });
 };
 
+// --- COLLECTION VIEWS & HERO BANNERS DYNAMIC CACHING ---
+export const getCollectionViews = (): number => {
+  return Number(getCachedSetting('analytics_metrics', 'collection_views', '1242'));
+};
+
+export const incrementCollectionViews = async (): Promise<number> => {
+  const current = getCollectionViews();
+  const next = current + 1;
+  const merged = { ...(_settingsInMemory['analytics_metrics'] || {}), collection_views: String(next) };
+  _settingsInMemory['analytics_metrics'] = merged;
+  window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: _settingsInMemory }));
+  await saveSetting('analytics_metrics', merged);
+  return next;
+};
+
+// --- HERO BANNER MANAGEMENT UTILITIES ---
+import { HeroBanner } from './types';
+
+export const getStoredHeroBanners = (): HeroBanner[] => {
+  if (_settingsInMemory.hero_banners && Array.isArray(_settingsInMemory.hero_banners.list)) {
+    return _settingsInMemory.hero_banners.list;
+  }
+  return [
+    {
+      id: 'banner-0',
+      imageUrl: 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600',
+      title: 'Where Royal Weddings Begin',
+      subtitle: 'INDIAS PREMIER GROOM COUTURE STUDIO',
+      description: 'Step into a world of timeless majesty. Handcrafted sherwanis tailored meticulously by generational master craftsmen to make your entry truly legendary.',
+      enabled: true,
+      order: 0
+    },
+    {
+      id: 'banner-1',
+      imageUrl: 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600',
+      title: 'Crafting the Groom of Your Dreams',
+      subtitle: 'EXCLUSIVE BRIDAL SHERWANIS',
+      description: 'Zardozi wire-work woven with real gold threads, semi-precious stone embellishments, and rich handspun silk drapes styled specifically for the elite groom.',
+      enabled: true,
+      order: 1
+    },
+    {
+      id: 'banner-2',
+      imageUrl: 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600',
+      title: 'India’s Premium Groom Fashion Destination',
+      subtitle: 'THE MODERN RAJPUTANA CHIC',
+      description: 'Explore state-of-the-art Indo-western structures, velvet Nawabi Peshawari sets, and sharp Italian Wool-mix bundis crafted strictly for high-converting celebrations.',
+      enabled: true,
+      order: 2
+    }
+  ];
+};
+
+export const saveHeroBanners = async (banners: HeroBanner[]): Promise<void> => {
+  if (typeof window === 'undefined') return;
+  if (!_settingsInMemory.hero_banners) {
+    _settingsInMemory.hero_banners = {};
+  }
+  _settingsInMemory.hero_banners.list = banners;
+  window.dispatchEvent(new CustomEvent('varudu-banners-updated', { detail: banners }));
+  await saveSetting('hero_banners', { list: banners });
+};
+
+export const isBannerActive = (banner: HeroBanner): boolean => {
+  if (!banner.enabled) return false;
+  
+  const now = new Date();
+  
+  if (banner.startDate) {
+    const start = new Date(banner.startDate);
+    if (!isNaN(start.getTime()) && now < start) return false;
+  }
+  
+  if (banner.endDate) {
+    const end = new Date(banner.endDate);
+    if (banner.endDate.length <= 10) {
+      end.setHours(23, 59, 59, 999);
+    }
+    if (!isNaN(end.getTime()) && now > end) return false;
+  }
+  
+  return true;
+};
+
+export const getScheduledHeroBanners = (): HeroBanner[] => {
+  const banners = getStoredHeroBanners();
+  return banners
+    .filter(isBannerActive)
+    .sort((a, b) => a.order - b.order);
+};
+
+// --- IMAGE COMPRESSION BEFORE UPLOAD ---
+export const compressImageBeforeUpload = async (file: File | Blob, maxWidth = 1200, maxHeight = 1200, quality = 0.82): Promise<Blob> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(file); // fallback
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              resolve(file);
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => resolve(file);
+    };
+    reader.onerror = () => resolve(file);
+  });
+};
+
+// --- SITEMAP XML GENERATOR HELPER ---
+export const generateSitemapXmlContent = (collections: ProductCollection[]): string => {
+  const today = new Date().toISOString().split('T')[0];
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+  
+  // Home page root
+  xml += `  <url>\n`;
+  xml += `    <loc>https://varuduethnicstudio.com/</loc>\n`;
+  xml += `    <lastmod>${today}</lastmod>\n`;
+  xml += `    <changefreq>daily</changefreq>\n`;
+  xml += `    <priority>1.0</priority>\n`;
+  xml += `  </url>\n`;
+  
+  // Collections Section Anchor
+  xml += `  <url>\n`;
+  xml += `    <loc>https://varuduethnicstudio.com/#featured-collections-desk</loc>\n`;
+  xml += `    <lastmod>${today}</lastmod>\n`;
+  xml += `    <changefreq>weekly</changefreq>\n`;
+  xml += `    <priority>0.8</priority>\n`;
+  xml += `  </url>\n`;
+
+  // Dynamic products
+  collections.forEach(item => {
+    xml += `  <url>\n`;
+    xml += `    <loc>https://varuduethnicstudio.com/collection/${item.id}</loc>\n`;
+    xml += `    <lastmod>${today}</lastmod>\n`;
+    xml += `    <changefreq>monthly</changefreq>\n`;
+    xml += `    <priority>0.6</priority>\n`;
+    xml += `  </url>\n`;
+  });
+  
+  xml += `</urlset>`;
+  return xml;
+};
+
 // --- SETTINGS STORAGE UTILITIES ---
 export const getCachedSetting = (docId: string, field: string, defaultValue: string): string => {
   if (_settingsInMemory[docId] && _settingsInMemory[docId][field]) {

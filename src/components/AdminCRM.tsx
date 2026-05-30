@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { CustomerLead, Appointment, ProductCollection, LookbookItem } from '../types';
+import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner } from '../types';
 import { 
   getStoredLeads, updateLeadStatus, 
   getStoredAppointments, updateAppointmentStatus,
@@ -13,7 +13,8 @@ import {
   getDynamicLookbook, saveDynamicLookbook,
   getWebPhoto, saveWebPhoto, deleteWebPhoto,
   saveSetting, getCachedSetting,
-  uploadMediaAsset, updateMediaAssetMetadata, deleteMediaAsset, MediaAsset
+  uploadMediaAsset, updateMediaAssetMetadata, deleteMediaAsset, MediaAsset,
+  getStoredHeroBanners, saveHeroBanners, compressImageBeforeUpload, getCollectionViews, generateSitemapXmlContent
 } from '../utils';
 import { uploadToStorage, deleteFromStorage, auth, db, getCloudinaryConfig } from '../firebase';
 import { 
@@ -27,7 +28,8 @@ import {
   Search, Filter, Sliders, MessageSquare, Phone, Clock, Download, 
   Sparkles, CheckCircle, AlertOctagon, TrendingUp, DollarSign, Calendar, 
   Users, Layers, Trash2, X, PlusCircle, Volume2, Shield, FileText, Check,
-  Film, Play, VolumeX, Upload, HardDrive, AlertCircle, RefreshCw, Eye
+  Film, Play, VolumeX, Upload, HardDrive, AlertCircle, RefreshCw, Eye,
+  BarChart3, ChevronLeft, ChevronRight, CalendarDays, CheckSquare, Globe, Heart, Share2, ToggleLeft, ToggleRight, Scissors, SlidersHorizontal
 } from 'lucide-react';
 
 interface CRMProps {
@@ -43,11 +45,13 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [isAuthPending, setIsAuthPending] = useState(false);
 
   // Active Tab
-  const [crmTab, setCrmTab] = useState<'leads' | 'appointments' | 'analytics' | 'media'>('leads');
+  const [crmTab, setCrmTab] = useState<'leads' | 'appointments' | 'analytics' | 'media' | 'banners'>('leads');
 
   // Leads & Appointments States
   const [leads, setLeads] = useState<CustomerLead[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [appointmentViewType, setAppointmentViewType] = useState<'list' | 'calendar'>('list');
+  const [calendarDate, setCalendarDate] = useState<Date>(new Date());
   
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -80,6 +84,145 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [prodFeatures, setProdFeatures] = useState('');
   const [prodImgFile, setProdImgFile] = useState<File | null>(null);
   const [prodVidFile, setProdVidFile] = useState<File | null>(null);
+  
+  // Advanced Collections extensions
+  const [prodImagesText, setProdImagesText] = useState('');
+  const [prodFeatured, setProdFeatured] = useState(false);
+
+  // --- HERO BANNERS MANAGEMENT STATES ---
+  const [bannersList, setBannersList] = useState<HeroBanner[]>(() => getStoredHeroBanners());
+  const [editingBanner, setEditingBanner] = useState<HeroBanner | null>(null);
+  const [isAddingBanner, setIsAddingBanner] = useState(false);
+  const [isSavingBanner, setIsSavingBanner] = useState(false);
+
+  // Form states for banner
+  const [bannerTitle, setBannerTitle] = useState('');
+  const [bannerSubtitle, setBannerSubtitle] = useState('');
+  const [bannerDesc, setBannerDesc] = useState('');
+  const [bannerImgUrl, setBannerImgUrl] = useState('');
+  const [bannerImgFile, setBannerImgFile] = useState<File | null>(null);
+  const [bannerStartDate, setBannerStartDate] = useState('');
+  const [bannerEndDate, setBannerEndDate] = useState('');
+  const [bannerEnabled, setBannerEnabled] = useState(true);
+  const [bannerOrder, setBannerOrder] = useState(0);
+
+  const startAddBanner = () => {
+    setEditingBanner(null);
+    setIsAddingBanner(true);
+    setBannerTitle('');
+    setBannerSubtitle('');
+    setBannerDesc('');
+    setBannerImgUrl('');
+    setBannerImgFile(null);
+    setBannerStartDate('');
+    setBannerEndDate('');
+    setBannerEnabled(true);
+    setBannerOrder(bannersList.length);
+    setFormError('');
+    setFormSuccess('');
+  };
+
+  const startEditBanner = (b: HeroBanner) => {
+    setEditingBanner(b);
+    setIsAddingBanner(false);
+    setBannerTitle(b.title || '');
+    setBannerSubtitle(b.subtitle || '');
+    setBannerDesc(b.description || '');
+    setBannerImgUrl(b.imageUrl || '');
+    setBannerImgFile(null);
+    setBannerStartDate(b.startDate || '');
+    setBannerEndDate(b.endDate || '');
+    setBannerEnabled(b.enabled);
+    setBannerOrder(b.order);
+    setFormError('');
+    setFormSuccess('');
+  };
+
+  const handleSaveBanner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bannerTitle.trim() || !bannerSubtitle.trim()) {
+      setFormError('Banner Title and Subtitle are required.');
+      return;
+    }
+    setFormError('');
+    setFormSuccess('');
+    setIsSavingBanner(true);
+
+    try {
+      let finalImgUrl = bannerImgUrl || 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600';
+      const targetId = editingBanner ? editingBanner.id : `banner-${Date.now()}`;
+
+      if (bannerImgFile) {
+        const compressedBlob = await compressImageBeforeUpload(bannerImgFile);
+        const compressedFile = new File([compressedBlob], bannerImgFile.name, { type: 'image/jpeg' });
+        
+        try {
+          const downloadUrl = await uploadToStorage(`banners/${targetId}`, compressedFile);
+          finalImgUrl = downloadUrl;
+        } catch (uploadErr) {
+          console.warn('Storage banner upload failed, using reader fallback...', uploadErr);
+          const base64Url = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(compressedFile);
+          });
+          finalImgUrl = base64Url;
+        }
+      }
+
+      const updatedBanner: HeroBanner = {
+        id: targetId,
+        title: bannerTitle,
+        subtitle: bannerSubtitle,
+        description: bannerDesc,
+        imageUrl: finalImgUrl,
+        startDate: bannerStartDate || undefined,
+        endDate: bannerEndDate || undefined,
+        enabled: bannerEnabled,
+        order: Number(bannerOrder)
+      };
+
+      let newList: HeroBanner[];
+      if (editingBanner) {
+        newList = bannersList.map(b => b.id === targetId ? updatedBanner : b);
+        setFormSuccess('Hero banner updated successfully!');
+      } else {
+        newList = [...bannersList, updatedBanner];
+        setFormSuccess('New hero banner created successfully!');
+      }
+
+      newList.sort((a, b) => a.order - b.order);
+      await saveHeroBanners(newList);
+      setBannersList(newList);
+      playRegalGoldChime();
+
+      setTimeout(() => {
+        setEditingBanner(null);
+        setIsAddingBanner(false);
+        setFormSuccess('');
+      }, 1500);
+
+    } catch (err: any) {
+      console.error(err);
+      setFormError(`Failed to save hero banner: ${err?.message || err}`);
+    } finally {
+      setIsSavingBanner(false);
+    }
+  };
+
+  const handleDeleteBanner = (id: string) => {
+    requestConfirm(
+      'Remove Hero Banner',
+      'Are you absolutely sure you want to remove this homepage hero banner? This will delete it immediately from the homepage carousel slideshow.',
+      async () => {
+        const newList = bannersList.filter(b => b.id !== id);
+        await saveHeroBanners(newList);
+        setBannersList(newList);
+        playRegalGoldChime();
+      }
+    );
+  };
 
   // Lookbook form states
   const [lkTitle, setLkTitle] = useState('');
@@ -117,6 +260,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setProdFeatures(prod.features ? prod.features.join('. ') : '');
     setProdImgFile(null);
     setProdVidFile(null);
+    setProdImagesText(prod.images ? prod.images.join(', ') : '');
+    setProdFeatured(!!prod.featured);
     setFormError('');
     setFormSuccess('');
   };
@@ -134,6 +279,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setProdFeatures('Available in customized navy, midnight velvet, emerald green shading');
     setProdImgFile(null);
     setProdVidFile(null);
+    setProdImagesText('');
+    setProdFeatured(false);
     setFormError('');
     setFormSuccess('');
   };
@@ -193,27 +340,35 @@ export default function AdminCRM({ onClose }: CRMProps) {
       const targetId = editingProduct ? editingProduct.id : `prod-${Date.now()}`;
 
       if (prodImgFile) {
+        // Apply "Image compression before upload" requirement
+        let compressedFile = prodImgFile;
         try {
-          const downloadUrl = await uploadToStorage(`products/images/${targetId}`, prodImgFile);
+          const compressedBlob = await compressImageBeforeUpload(prodImgFile);
+          compressedFile = new File([compressedBlob], prodImgFile.name, { type: 'image/jpeg' });
+        } catch (compressErr) {
+          console.warn('Bespoke product image compression failed, using original...', compressErr);
+        }
+
+        try {
+          const downloadUrl = await uploadToStorage(`products/images/${targetId}`, compressedFile);
           finalImgUrl = downloadUrl;
         } catch (uploadErr: any) {
           console.warn('Firebase Storage image upload failed, falling back to Base64 reader if small...', uploadErr);
-          if (prodImgFile.size < 400 * 1024) {
+          if (compressedFile.size < 400 * 1024) {
             try {
               const base64Url = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => resolve(reader.result as string);
                 reader.onerror = reject;
-                reader.readAsDataURL(prodImgFile);
+                reader.readAsDataURL(compressedFile);
               });
               finalImgUrl = base64Url;
             } catch (rErr) {
               finalImgUrl = CATEGORY_UNSPLASH_FALLBACKS[prodCategory] || finalImgUrl;
             }
           } else {
-            // Keep object url for active session preview, but use premium Category fallback url for cross-device database
             try {
-              finalImgUrl = URL.createObjectURL(prodImgFile);
+              finalImgUrl = URL.createObjectURL(compressedFile);
             } catch (_) {
               finalImgUrl = CATEGORY_UNSPLASH_FALLBACKS[prodCategory] || finalImgUrl;
             }
@@ -237,6 +392,11 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
       const tagsArray = prodTags ? prodTags.split(',').map(t => t.trim()).filter(Boolean) : [];
       const featuresArray = prodFeatures ? prodFeatures.split('.').map(f => f.trim()).filter(Boolean) : [];
+      
+      // Parse multi images array
+      const extraImagesArray = prodImagesText 
+        ? prodImagesText.split(',').map(url => url.trim()).filter(Boolean) 
+        : [];
 
       const newProduct: ProductCollection = {
         id: targetId,
@@ -249,6 +409,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
         features: featuresArray,
         imageUrl: finalImgUrl,
         videoUrl: finalVidUrl,
+        images: extraImagesArray,
+        featured: prodFeatured,
       };
 
       let updatedList: ProductCollection[];
@@ -522,7 +684,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
   // Form Upload States
   const [newAssetTitle, setNewAssetTitle] = useState('');
   const [newAssetCategory, setNewAssetCategory] = useState<'images' | 'videos' | 'hero-banners' | 'groom-collections'>('images');
-  const [newAssetFile, setNewAssetFile] = useState<File | null>(null);
+  const [newAssetFiles, setNewAssetFiles] = useState<File[]>([]);
   const [assetUploadingFlag, setAssetUploadingFlag] = useState(false);
   const [assetFormError, setAssetFormError] = useState('');
   const [assetFormSuccess, setAssetFormSuccess] = useState('');
@@ -531,6 +693,9 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [editingMediaId, setEditingMediaId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingCategory, setEditingCategory] = useState<'images' | 'videos' | 'hero-banners' | 'groom-collections'>('images');
+
+  // Total views analytics state
+  const [collectionViews, setCollectionViews] = useState(0);
 
   // Firebase Auth Observer
   useEffect(() => {
@@ -546,6 +711,19 @@ export default function AdminCRM({ onClose }: CRMProps) {
     });
     return () => unsubscribe();
   }, []);
+
+  // Load collection views from Firestore
+  useEffect(() => {
+    async function loadViews() {
+      try {
+        const v = await getCollectionViews();
+        setCollectionViews(v);
+      } catch (err) {
+        console.error('Failed to load views:', err);
+      }
+    }
+    loadViews();
+  }, [crmTab]);
 
   // Load and subscribe to real-time events on same window
   useEffect(() => {
@@ -739,30 +917,49 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
   };
 
-  // General Media Asset Hub Actions
+  // General Media Asset Hub Actions with Multi-Upload & Image Pre-Compression
   const handleMediaAssetUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAssetFile) {
-      setAssetFormError('Please select a file to upload.');
+    if (newAssetFiles.length === 0) {
+      setAssetFormError('Please select or drop one or more files to upload.');
       return;
     }
     setAssetFormError('');
     setAssetFormSuccess('');
     setAssetUploadingFlag(true);
 
+    let successCount = 0;
     try {
-      const titleToSave = newAssetTitle.trim();
-      const uploadedItem = await uploadMediaAsset(newAssetFile, titleToSave, newAssetCategory);
-      setAssetFormSuccess(`Successfully uploaded "${uploadedItem.title}" to category "${newAssetCategory}" and synced!`);
+      for (const file of newAssetFiles) {
+        let fileToUpload: File | Blob = file;
+        
+        // Satisfy "Image compression before upload" requirement
+        if (file.type.startsWith('image/')) {
+          try {
+            const compressedBlob = await compressImageBeforeUpload(file);
+            fileToUpload = new File([compressedBlob], file.name, { type: 'image/jpeg' });
+          } catch (compressErr) {
+            console.warn('Preprocessing offline image compression failed, uploading original...', compressErr);
+          }
+        }
+
+        const cleanTitle = newAssetTitle.trim() 
+          ? `${newAssetTitle.trim()} - ${file.name.substring(0, file.name.lastIndexOf('.')) || file.name}`
+          : (file.name.substring(0, file.name.lastIndexOf('.')) || file.name);
+
+        await uploadMediaAsset(new File([fileToUpload], file.name, { type: file.type }), cleanTitle, newAssetCategory);
+        successCount++;
+      }
+
+      setAssetFormSuccess(`Successfully uploaded and synchronized ${successCount} assets to folder "${newAssetCategory}" with compression!`);
       setNewAssetTitle('');
-      setNewAssetFile(null);
-      // Reset input element if any
+      setNewAssetFiles([]);
       const fileInput = document.getElementById('general-asset-input') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
       playRegalGoldChime();
     } catch (err: any) {
-      console.error('Failed to upload general media asset:', err);
-      setAssetFormError(`Upload failed: ${err.message || err}`);
+      console.error('Failed to upload media assets loop:', err);
+      setAssetFormError(`Upload failed at asset ${successCount + 1}: ${err.message || err}`);
     } finally {
       setAssetUploadingFlag(false);
     }
@@ -1275,7 +1472,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
         </div>
 
         {/* Dashboard Tabs Selector */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2 sm:space-x-3">
           <button
             onClick={() => setCrmTab('leads')}
             className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
@@ -1310,6 +1507,17 @@ export default function AdminCRM({ onClose }: CRMProps) {
           </button>
 
           <button
+            onClick={() => setCrmTab('banners')}
+            className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+              crmTab === 'banners'
+                ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white'
+            }`}
+          >
+            🎪 Hero Banners
+          </button>
+
+          <button
             onClick={() => setCrmTab('media')}
             className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
               crmTab === 'media'
@@ -1320,6 +1528,31 @@ export default function AdminCRM({ onClose }: CRMProps) {
             🎬 Brand Cinema
           </button>
 
+          {/* Sitemap SEO Gen */}
+          <button
+            onClick={() => {
+              try {
+                const sitemapContent = generateSitemapXmlContent(collectionsList);
+                const blob = new Blob([sitemapContent], { type: 'application/xml' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'sitemap.xml';
+                link.click();
+                URL.revokeObjectURL(url);
+                showCustomAlert('SEO Sitemap Downloaded', 'The pristine production sitemap.xml featuring all luxury categories was generated and downloaded onto your machine. Deploy this in your public root to ensure ultra-fast premium indexing on Google!');
+                playRegalGoldChime();
+              } catch (err: any) {
+                showCustomAlert('Sitemap Failed', 'Failed to compile XML draft: ' + err?.message);
+              }
+            }}
+            className="p-2 border border-white/5 hover:border-emerald-500 hover:text-emerald-400 rounded text-gray-500 transition-colors cursor-pointer flex items-center justify-center space-x-1"
+            title="Export Sitemap XML"
+          >
+            <Globe className="w-4 h-4 text-[#C5A85D]" />
+            <span className="text-[9px] uppercase tracking-wider font-bold hidden md:inline">SEO Sitemap</span>
+          </button>
+
           {/* Logout button */}
           <button
             onClick={handleLogout}
@@ -1327,7 +1560,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
             title="Log Out Security Session"
           >
             <Shield className="w-4 h-4" />
-            <span className="text-[9px] uppercase tracking-wider font-bold hidden sm:inline">Sign Out</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold hidden md:inline">Sign Out</span>
           </button>
 
           {/* Close Panel Button */}
@@ -1344,7 +1577,313 @@ export default function AdminCRM({ onClose }: CRMProps) {
       {/* CRM Dynamic Content Area */}
       <main className="flex-1 overflow-y-auto bg-[#0A0A0A] p-6">
         
-        {crmTab === 'media' ? (
+        {crmTab === 'banners' ? (
+          /* HOMEPAGE HERO BANNER CAROUSEL SLIDESHOW SCHEDULER */
+          <div className="max-w-5xl mx-auto space-y-8 animate-fade-in" id="crm-banners-pane">
+            <div className="bg-[#121212] border border-[#C5A85D]/20 p-6 sm:p-8 rounded-lg relative overflow-hidden shadow-xl">
+              <span className="text-[10px] uppercase tracking-[0.25em] text-[#C5A85D] font-sans font-bold block mb-1">
+                Homepage Hero Slideshow Manager
+              </span>
+              <h3 className="font-display font-medium text-2xl text-white tracking-widest uppercase flex items-center space-x-2">
+                <span>Dynamic Banner Carousel</span>
+              </h3>
+              <p className="text-gray-400 text-xs mt-2 leading-relaxed">
+                Add, schedule, enable/disable, and re-order luxury banners displayed in full-screen splendour on the home page.
+              </p>
+            </div>
+
+            {formError && (
+              <div className="bg-red-950/20 border border-red-500/20 rounded p-4 text-xs text-red-200">
+                {formError}
+              </div>
+            )}
+            {formSuccess && (
+              <div className="bg-emerald-950/20 border border-emerald-500/20 rounded p-4 text-xs text-emerald-200">
+                {formSuccess}
+              </div>
+            )}
+
+            {isAddingBanner || editingBanner ? (
+              /* Add/Edit banner Form */
+              <div className="bg-[#121212] border border-[#C5A85D]/20 p-6 rounded-lg shadow-xl">
+                <h4 className="text-[#C5A85D] font-sans font-bold text-sm uppercase tracking-wider mb-6 pb-2 border-b border-white/5">
+                  {editingBanner ? 'Edit Homepage Hero Banner' : 'Configure New Homepage Hero Banner'}
+                </h4>
+                
+                <form onSubmit={handleSaveBanner} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Banner Title (Primary Display Heading)</label>
+                      <input
+                        type="text"
+                        value={bannerTitle}
+                        onChange={(e) => setBannerTitle(e.target.value)}
+                        placeholder="e.g. Royal Bespoke Sherwanis"
+                        className="w-full bg-black border border-white/10 focus:border-[#C5A85D] text-white p-2.5 text-xs rounded focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Banner Subtitle (Elegant Accent Callout)</label>
+                      <input
+                        type="text"
+                        value={bannerSubtitle}
+                        onChange={(e) => setBannerSubtitle(e.target.value)}
+                        placeholder="e.g. Handcrafted Threadwork Masterpieces"
+                        className="w-full bg-black border border-white/10 focus:border-[#C5A85D] text-white p-2.5 text-xs rounded focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Brief Narrative Description</label>
+                    <textarea
+                      value={bannerDesc}
+                      onChange={(e) => setBannerDesc(e.target.value)}
+                      placeholder="e.g. Experience unmatched masculine luxury tailored from pure Italian velvet..."
+                      rows={3}
+                      className="w-full bg-black border border-white/10 focus:border-[#C5A85D] text-white p-2.5 text-xs rounded focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Fallback Image URL</label>
+                      <input
+                        type="text"
+                        value={bannerImgUrl}
+                        onChange={(e) => setBannerImgUrl(e.target.value)}
+                        placeholder="Paste image URL (e.g. Unsplash URL)"
+                        className="w-full bg-black border border-white/10 focus:border-[#C5A85D] text-white p-2.5 text-xs rounded focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Or Upload Premium Backdrop Image</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setBannerImgFile(e.target.files?.[0] || null)}
+                        className="w-full text-xs text-gray-400 focus:outline-none file:mr-4 file:py-1.5 file:px-3 file:border-0 file:text-[10px] file:uppercase file:font-semibold file:tracking-wider file:bg-[#4A0E17] file:text-white hover:file:bg-[#681924]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Schedule Start Date (Optional)</label>
+                      <input
+                        type="date"
+                        value={bannerStartDate}
+                        onChange={(e) => setBannerStartDate(e.target.value)}
+                        className="w-full bg-black border border-white/10 focus:border-[#C5A85D] text-white p-2.5 text-xs rounded focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Schedule End Date (Optional)</label>
+                      <input
+                        type="date"
+                        value={bannerEndDate}
+                        onChange={(e) => setBannerEndDate(e.target.value)}
+                        className="w-full bg-black border border-white/10 focus:border-[#C5A85D] text-white p-2.5 text-xs rounded focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-sans mb-1.5 font-bold">Sort Order (Rank)</label>
+                      <input
+                        type="number"
+                        value={bannerOrder}
+                        onChange={(e) => setBannerOrder(Number(e.target.value))}
+                        className="w-full bg-black border border-white/10 focus:border-[#C5A85D] text-white p-2.5 text-xs rounded focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-3 bg-black/40 p-3 rounded border border-white/5">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-300 font-sans">
+                      {bannerEnabled ? '✅ Slide Enabled & Eligible for Display' : '❌ Slide Disabled / Inactive'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setBannerEnabled(!bannerEnabled)}
+                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 outline-none ${
+                        bannerEnabled ? 'bg-emerald-600' : 'bg-white/10'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                          bannerEnabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center space-x-3 pt-4 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBanner(null);
+                        setIsAddingBanner(false);
+                      }}
+                      className="px-4 py-2 border border-white/5 hover:bg-white/5 text-gray-300 font-sans text-[10px] uppercase tracking-widest rounded cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingBanner}
+                      className="px-6 py-2 bg-[#C5A85D] hover:bg-[#D5B86D] disabled:opacity-50 text-black font-sans text-[10px] font-bold uppercase tracking-widest rounded cursor-pointer flex items-center space-x-1.5"
+                    >
+                      {isSavingBanner ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Saving Slide...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Apply Master Slide</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              /* Banner listings list */
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-white text-xs uppercase tracking-widest font-sans font-bold text-[#C5A85D]">
+                    Active Banners Layout Stack ({bannersList.length})
+                  </h4>
+                  <button
+                    onClick={startAddBanner}
+                    className="flex items-center space-x-1 px-4 py-2 bg-[#C5A85D] hover:bg-[#D5B86D] text-black font-sans font-bold text-[10px] uppercase tracking-widest rounded cursor-pointer shadow-md"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Create Homepage Banner</span>
+                  </button>
+                </div>
+
+                {bannersList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 bg-[#121212] border border-dashed border-white/5 rounded-lg text-center">
+                    <Sliders className="w-10 h-10 text-gray-600 mb-2" />
+                    <h5 className="text-sm font-sans text-[#E5C46D] uppercase font-bold tracking-widest">No Custom Home Banners Created</h5>
+                    <p className="text-gray-400 text-xs mt-1 max-w-xs leading-normal font-serif">
+                      The site will dynamically fallback to the default regal velvet slider animations until you deploy home campaign backdrops.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {bannersList.map((b, idx) => {
+                      // Schedule text
+                      let scheduleStatus = 'Always Active';
+                      if (b.startDate && b.endDate) {
+                        const now = new Date();
+                        const start = new Date(b.startDate);
+                        const end = new Date(b.endDate);
+                        if (now >= start && now <= end) {
+                          scheduleStatus = `Live (Scheduled: ${b.startDate} to ${b.endDate})`;
+                        } else {
+                          scheduleStatus = `Scheduled Inactive (Range: ${b.startDate} to ${b.endDate})`;
+                        }
+                      } else if (b.startDate) {
+                        scheduleStatus = `Starts from ${b.startDate}`;
+                      } else if (b.endDate) {
+                        scheduleStatus = `Until ${b.endDate}`;
+                      }
+
+                      return (
+                        <div key={b.id} className="bg-[#121212] border border-[#C5A85D]/15 rounded-lg p-4 flex flex-col md:flex-row items-center justify-between shadow hover:border-[#C5A85D]/40 transition-all gap-4">
+                          <div className="flex items-center space-x-4 w-full md:w-auto">
+                            <div className="w-24 h-16 rounded overflow-hidden bg-black shrink-0 border border-white/5">
+                              <img src={b.imageUrl} alt={b.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <h5 className="text-white text-sm font-sans font-bold uppercase tracking-wider">{b.title}</h5>
+                                <span className="font-mono text-[9px] text-[#C5A85D] bg-[#C5A85D]/10 px-1.5 py-0.5 rounded border border-[#C5A85D]/20">Rank: #{b.order}</span>
+                              </div>
+                              <p className="text-xs text-[#E5C46D] font-sans font-medium mt-0.5 tracking-wide">{b.subtitle}</p>
+                              <div className="flex flex-wrap items-center gap-2 mt-2 text-[10px]">
+                                <span className={`px-2 py-0.5 rounded font-bold uppercase ${b.enabled ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/30' : 'bg-red-950 text-red-400 border border-red-800/30'} border`}>
+                                  {b.enabled ? 'Active/Enabled' : 'Disabled'}
+                                </span>
+                                <span className="text-gray-400 font-mono tracking-normal">{scheduleStatus}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-1.5 w-full md:w-auto justify-end border-t md:border-t-0 border-white/5 pt-3 md:pt-0 shrink-0">
+                            {/* Reordering indicators */}
+                            <button
+                              disabled={idx === 0}
+                              onClick={async () => {
+                                const list = [...bannersList];
+                                const temp = list[idx].order;
+                                list[idx].order = list[idx - 1].order;
+                                list[idx - 1].order = temp;
+                                list.sort((x, y) => x.order - y.order);
+                                await saveHeroBanners(list);
+                                setBannersList(list);
+                              }}
+                              className="p-1 px-2 border border-white/5 disabled:opacity-30 rounded hover:bg-white/5 text-gray-400 cursor-pointer text-xs font-sans"
+                              title="Move Slide Up"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              disabled={idx === bannersList.length - 1}
+                              onClick={async () => {
+                                const list = [...bannersList];
+                                const temp = list[idx].order;
+                                list[idx].order = list[idx + 1].order;
+                                list[idx + 1].order = temp;
+                                list.sort((x, y) => x.order - y.order);
+                                await saveHeroBanners(list);
+                                setBannersList(list);
+                              }}
+                              className="p-1 px-2 border border-white/5 disabled:opacity-30 rounded hover:bg-white/5 text-gray-400 cursor-pointer text-xs font-sans"
+                              title="Move Slide Down"
+                            >
+                              ▼
+                            </button>
+                            
+                            {/* Toggle quick status */}
+                            <button
+                              onClick={async () => {
+                                const list = bannersList.map(item => item.id === b.id ? { ...item, enabled: !item.enabled } : item);
+                                await saveHeroBanners(list);
+                                setBannersList(list);
+                              }}
+                              className="p-2 rounded border border-white/5 hover:bg-white/5 cursor-pointer flex items-center justify-center"
+                              title="Toggle Enabled Status"
+                            >
+                              {b.enabled ? <ToggleRight className="w-4 h-4 text-emerald-400" /> : <ToggleLeft className="w-4 h-4 text-gray-600" />}
+                            </button>
+
+                            <button
+                              onClick={() => startEditBanner(b)}
+                              className="p-2 border border-white/5 rounded hover:bg-white/5 text-amber-400 cursor-pointer"
+                              title="Edit Details"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteBanner(b.id)}
+                              className="p-2 border border-white/5 rounded hover:bg-red-950/20 text-red-400 hover:border-red-500/20 cursor-pointer"
+                              title="Remove Slide"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : crmTab === 'media' ? (
           /* CINEMA LOGO VIDEO & INTRO SETTINGS PANEL */
           <div className="max-w-5xl mx-auto space-y-8 animate-fade-in" id="crm-media-pane">
             
@@ -1912,20 +2451,21 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
                     <div>
                       <label className="block text-[9px] uppercase tracking-wider text-gray-400 font-sans font-bold mb-2">
-                        Image or Video Attachment
+                        Image or Video Attachment (Drag & Drop multiple files)
                       </label>
                       <div className="border border-dashed border-white/10 hover:border-[#C5A85D]/40 rounded-lg p-4 text-center cursor-pointer transition-all bg-black/50 hover:bg-black relative">
                         <input
                           id="general-asset-input"
                           type="file"
+                          multiple
                           accept="image/*,video/*"
                           onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setNewAssetFile(file);
+                            const files = e.target.files ? Array.from(e.target.files) as File[] : [];
+                            if (files.length > 0) {
+                              setNewAssetFiles(files);
+                              const firstFile = files[0] as File;
                               if (!newAssetTitle) {
-                                // Default title to clean filename omitting extension
-                                const cleanBase = file.name.split('.')[0].replace(/[-_]/g, ' ');
+                                const cleanBase = firstFile.name.split('.')[0].replace(/[-_]/g, ' ');
                                 setNewAssetTitle(cleanBase);
                               }
                             }
@@ -1935,10 +2475,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
                         <div className="flex flex-col items-center space-y-1">
                           <Upload className="w-6 h-6 text-gray-500" />
                           <span className="text-[10px] text-gray-400 font-sans">
-                            {newAssetFile ? newAssetFile.name : 'Click or Drag & Drop'}
+                            {newAssetFiles.length > 0 
+                              ? `${newAssetFiles.length} files selected: ${newAssetFiles.map((f: File) => f.name).join(', ')}`
+                              : 'Click or Drag & Drop Multiple Attachments'}
                           </span>
                           <span className="text-[8px] text-gray-600 uppercase tracking-widest font-mono">
-                            {newAssetFile ? `${(newAssetFile.size / (1024 * 1024)).toFixed(2)} MB` : 'Images or Videos up to 100MB'}
+                            {newAssetFiles.length > 0 
+                              ? `${(newAssetFiles.reduce((acc: number, f: File) => acc + f.size, 0) / (1024 * 1024)).toFixed(2)} MB total`
+                              : 'Images or Videos up to 100MB each'}
                           </span>
                         </div>
                       </div>
@@ -1960,7 +2504,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
                     <button
                       type="submit"
-                      disabled={assetUploadingFlag || !newAssetFile}
+                      disabled={assetUploadingFlag || newAssetFiles.length === 0}
                       className="w-full py-2.5 bg-[#C5A85D] hover:bg-[#D5B86D] disabled:bg-gray-800 disabled:text-gray-500 text-black font-sans font-bold text-[10px] uppercase tracking-widest rounded transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-md"
                     >
                       {assetUploadingFlag ? (
@@ -2807,79 +3351,96 @@ export default function AdminCRM({ onClose }: CRMProps) {
           /* Robust analytics board with metrics cards */
           <div className="max-w-6xl mx-auto space-y-8" id="crm-analytics-pane">
             
-            {/* Top Row - Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Top Row - Cards Grid - 5 Critical Luxury Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               
-              {/* Converted Sales */}
-              <div className="bg-[#121212] border border-[#C5A85D]/25 p-5 rounded-lg flex items-center justify-between shadow-lg">
+              {/* Total Leads */}
+              <div className="bg-[#121212] border border-[#C5A85D]/25 p-4 rounded-lg flex items-center justify-between shadow-lg">
                 <div className="space-y-1">
                   <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans block font-semibold">
-                    Atelier Converted Sales
+                    Total Leads
                   </span>
                   <div className="font-display font-medium text-2xl text-white">
-                    ₹{estimatedRevenue.toLocaleString('en-IN')}
+                    {leads.length}
                   </div>
-                  <span className="text-[10px] text-emerald-400 font-sans block flex items-center">
-                    <TrendingUp className="w-3.5 h-3.5 mr-1" />
-                    <span>Based on real measurements</span>
+                  <span className="text-[10px] text-gray-400 font-sans block">
+                    {leads.filter(l => l.status === 'New').length} new in queue
                   </span>
                 </div>
-                <div className="p-3 bg-emerald-600/10 text-emerald-400 rounded-full">
-                  <DollarSign className="w-6 h-6" />
+                <div className="p-2.5 bg-yellow-500/10 text-yellow-400 rounded-full">
+                  <Users className="w-5 h-5 text-[#C5A85D]" />
                 </div>
               </div>
 
-              {/* Conversion Percentage */}
-              <div className="bg-[#121212] border border-[#C5A85D]/25 p-5 rounded-lg flex items-center justify-between shadow-lg">
+              {/* Total Appointments */}
+              <div className="bg-[#121212] border border-[#C5A85D]/25 p-4 rounded-lg flex items-center justify-between shadow-lg">
                 <div className="space-y-1">
                   <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans block font-semibold">
-                    Engagement Index
+                    Total Appointments
                   </span>
                   <div className="font-display font-medium text-2xl text-white">
-                    {conversionPercentage}%
+                    {appointments.length}
                   </div>
-                  <span className="text-[11px] text-gray-400 font-serif block italic">
-                    {convertedLeadsCount} of {totalLeadsCount} Groom Leads Locked
+                  <span className="text-[10px] text-gray-400 font-sans block">
+                    {appointments.filter(a => a.status === 'Pending').length} pending approval
                   </span>
                 </div>
-                <div className="p-3 bg-indigo-600/10 text-indigo-400 rounded-full">
-                  <PercentIcon className="w-6 h-6 text-[#C5A85D]" />
+                <div className="p-2.5 bg-[#4A0E17]/30 text-red-400 rounded-full">
+                  <Calendar className="w-5 h-5 text-[#C5A85D]" />
                 </div>
               </div>
 
-              {/* Trials Scheduled */}
-              <div className="bg-[#121212] border border-[#C5A85D]/25 p-5 rounded-lg flex items-center justify-between shadow-lg">
+              {/* Total Photo Uploads */}
+              <div className="bg-[#121212] border border-[#C5A85D]/25 p-4 rounded-lg flex items-center justify-between shadow-lg">
                 <div className="space-y-1">
-                  <span className="text-[9px] uppercase tracking-widest text-[#E5C46D] font-sans block font-semibold">
-                    Scheduled VIP Trials
+                  <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans block font-semibold">
+                    Total Photos
                   </span>
                   <div className="font-display font-medium text-2xl text-white">
-                    {trialScheduledCount} Slots
+                    {mediaAssets.filter(item => item.category === 'images' || item.url?.includes('/images/') || item.type?.startsWith('image/')).length}
                   </div>
-                  <span className="text-[11px] text-gray-400 font-sans block uppercase tracking-wider">
-                    {appointments.filter(a => a.status === 'Confirmed').length} Confirmed Calendar Events
+                  <span className="text-[10px] text-gray-400 font-sans block">
+                    Pre-compressed assets
                   </span>
                 </div>
-                <div className="p-3 bg-[#4A0E17] text-red-400 rounded-full">
-                  <Calendar className="w-6 h-6 text-[#C5A85D]" />
+                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-full">
+                  <Layers className="w-5 h-5 text-emerald-400" />
                 </div>
               </div>
 
-              {/* Pipeline Value */}
-              <div className="bg-[#121212] border border-[#C5A85D]/25 p-5 rounded-lg flex items-center justify-between shadow-lg">
+              {/* Total Video Uploads */}
+              <div className="bg-[#121212] border border-[#C5A85D]/25 p-4 rounded-lg flex items-center justify-between shadow-lg">
                 <div className="space-y-1">
-                  <span className="text-[9px] uppercase tracking-widest text-gray-400 font-sans block font-semibold">
-                    Outstanding Pipeline Value
+                  <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans block font-semibold">
+                    Total Videos
                   </span>
-                  <div className="font-display font-medium text-2xl text-[#E5C46D]">
-                    ₹{potentialPipelineValue.toLocaleString('en-IN')}
+                  <div className="font-display font-medium text-2xl text-white">
+                    {mediaAssets.filter(item => item.category === 'videos' || item.url?.includes('/videos/') || item.type?.startsWith('video/')).length}
                   </div>
-                  <span className="text-[11px] font-sans text-gray-500 block">
-                    {leads.filter(l => l.status === 'New').length} New Leads waiting follow-up
+                  <span className="text-[10px] text-gray-400 font-sans block">
+                    Optimized streaming clips
                   </span>
                 </div>
-                <div className="p-3 bg-zinc-800 text-zinc-400 rounded-full">
-                  <Users className="w-6 h-6 text-[#C5A85D]" />
+                <div className="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-full">
+                  <Film className="w-5 h-5 text-indigo-400" />
+                </div>
+              </div>
+
+              {/* Total Collection Views */}
+              <div className="bg-[#121212] border border-[#C5A85D]/25 p-4 rounded-lg flex items-center justify-between shadow-lg">
+                <div className="space-y-1">
+                  <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans block font-semibold">
+                    Collection Views
+                  </span>
+                  <div className="font-display font-medium text-2xl text-white">
+                    {collectionViews}
+                  </div>
+                  <span className="text-[10px] text-gray-400 font-sans block">
+                    Logged lookbook discovery
+                  </span>
+                </div>
+                <div className="p-2.5 bg-purple-500/10 text-purple-400 rounded-full">
+                  <Eye className="w-5 h-5 text-purple-400" />
                 </div>
               </div>
 
@@ -3183,7 +3744,28 @@ export default function AdminCRM({ onClose }: CRMProps) {
               <h3 className="font-display text-white text-base font-medium tracking-widest uppercase">
                 Appointment Calendar Index
               </h3>
-              <div>
+              
+              <div className="flex items-center space-x-3 shrink-0">
+                {/* View switcher buttons */}
+                <div className="flex border border-white/10 rounded overflow-hidden">
+                  <button
+                    onClick={() => setAppointmentViewType('list')}
+                    className={`px-3 py-1.5 text-[10px] font-sans font-bold uppercase tracking-widest transition-colors ${
+                      appointmentViewType === 'list' ? 'bg-[#C5A85D] text-black' : 'bg-black text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    List
+                  </button>
+                  <button
+                    onClick={() => setAppointmentViewType('calendar')}
+                    className={`px-3 py-1.5 text-[10px] font-sans font-bold uppercase tracking-widest transition-colors ${
+                      appointmentViewType === 'calendar' ? 'bg-[#C5A85D] text-black' : 'bg-black text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Calendar
+                  </button>
+                </div>
+
                 <select
                   value={branchFilter}
                   onChange={(e) => setBranchFilter(e.target.value)}
@@ -3196,72 +3778,242 @@ export default function AdminCRM({ onClose }: CRMProps) {
               </div>
             </div>
 
-            {/* List */}
-            <div className="space-y-4">
-              {filteredAppointments.length > 0 ? (
-                filteredAppointments.map((appt) => (
-                  <div
-                    key={appt.id}
-                    className="bg-[#121212] border border-white/10 p-5 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative overflow-hidden"
-                  >
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] uppercase tracking-widest text-[#C5A85D] font-mono leading-none">
-                          APPT: #{appt.id.replace('appt-', '')}
-                        </span>
-                        <h4 className="font-display font-medium text-base text-white tracking-widest uppercase">
-                          {appt.customerName}
-                        </h4>
-                        <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-sans tracking-wide ${
-                          appt.status === 'Confirmed' ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20' :
-                          appt.status === 'Completed' ? 'bg-zinc-800 text-zinc-400' : 'bg-amber-600/10 text-amber-500'
-                        }`}>
-                          {appt.status}
-                        </span>
-                      </div>
-
-                      <p className="text-gray-400 font-sans text-xs mt-2 font-medium">
-                        📍 Showroom Venue: <span className="text-[#E5C46D]">{appt.branch}</span>
-                      </p>
-
-                      <div className="grid grid-cols-2 gap-4 mt-3 text-xs font-sans text-gray-300">
-                        <p>🕒 Time booked: <strong>{appt.date} at {appt.time}</strong></p>
-                        <p>💬 Groom Phone: <strong>{appt.customerPhone}</strong></p>
-                      </div>
-                    </div>
-
-                    {/* Appt Modifier */}
-                    <div className="flex items-center space-x-3 shrink-0">
-                      
-                      <select
-                        value={appt.status}
-                        onChange={(e) => handleApptStatusChange(appt.id, e.target.value as any)}
-                        className="bg-black text-[#C5A85D] text-xs font-sans border border-[#C5A85D]/20 px-2.5 py-1.5 rounded focus:outline-none"
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="Confirmed">Confirmed</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Canceled">Canceled</option>
-                      </select>
-
-                      <a
-                        href={`tel:${appt.customerPhone.replace(/\s+/g, '')}`}
-                        className="p-2.5 bg-zinc-800 text-[#C5A85D] rounded hover:bg-[#C5A85D] hover:text-black transition-colors"
-                        title="Contact customer"
-                      >
-                        <Phone className="w-4 h-4" />
-                      </a>
-
-                    </div>
-
+            {appointmentViewType === 'calendar' ? (
+              /* Custom Showroom Calendar View */
+              <div className="space-y-6" id="crm-appointments-calendar">
+                <div className="bg-[#121212] border border-white/5 p-4 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
+                      className="p-2 bg-black border border-white/10 hover:border-[#C5A85D]/45 text-gray-400 hover:text-white rounded transition-colors text-xs font-bold font-sans cursor-pointer"
+                    >
+                      &larr; Prev Month
+                    </button>
+                    <span className="text-sm font-display uppercase tracking-widest text-white mx-4 font-bold">
+                      {calendarDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                    <button
+                      onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))}
+                      className="p-2 bg-black border border-white/10 hover:border-[#C5A85D]/45 text-gray-400 hover:text-white rounded transition-colors text-xs font-bold font-sans cursor-pointer"
+                    >
+                      Next Month &rarr;
+                    </button>
                   </div>
-                ))
-              ) : (
-                <div className="text-center py-12 text-[#C5A85D] font-serif uppercase tracking-widest bg-[#121212] border border-white/5 rounded">
-                  No Showroom appointments recorded.
+                  <button
+                    onClick={() => setCalendarDate(new Date())}
+                    className="px-3 py-1.5 bg-[#4A0E17]/25 text-[#C5A85D] hover:scale-102 transition-all border border-amber-900/40 rounded text-[9px] uppercase tracking-widest font-sans font-bold cursor-pointer"
+                  >
+                    Today
+                  </button>
                 </div>
-              )}
-            </div>
+
+                <div className="bg-[#121212] border border-white/5 rounded-lg overflow-hidden p-4">
+                  {/* Calendar Weekdays Heading block */}
+                  <div className="grid grid-cols-7 gap-2 mb-2 text-center">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                      <div key={d} className="text-[10px] uppercase tracking-wider text-gray-500 font-sans font-bold py-1">
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Calendar Grid Boxes */}
+                  <div className="grid grid-cols-7 gap-2">
+                    {(() => {
+                      const daysInMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0).getDate();
+                      const firstDayIndex = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1).getDay();
+                      
+                      const daysArray = [];
+                      const prevMonthDays = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 0).getDate();
+                      
+                      // Pre-padding from previous month
+                      for (let i = firstDayIndex - 1; i >= 0; i--) {
+                        daysArray.push({
+                          day: prevMonthDays - i,
+                          isCurrentMonth: false,
+                          dateObj: new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, prevMonthDays - i)
+                        });
+                      }
+                      
+                      // Days of current month
+                      for (let i = 1; i <= daysInMonth; i++) {
+                        daysArray.push({
+                          day: i,
+                          isCurrentMonth: true,
+                          dateObj: new Date(calendarDate.getFullYear(), calendarDate.getMonth(), i)
+                        });
+                      }
+                      
+                      // Post-padding into next month
+                      const nextDaysNeeded = 42 - daysArray.length;
+                      for (let i = 1; i <= nextDaysNeeded; i++) {
+                        daysArray.push({
+                          day: i,
+                          isCurrentMonth: false,
+                          dateObj: new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, i)
+                        });
+                      }
+
+                      return daysArray.map((cell, idx) => {
+                        const year = cell.dateObj.getFullYear();
+                        const month = String(cell.dateObj.getMonth() + 1).padStart(2, '0');
+                        const day = String(cell.dateObj.getDate()).padStart(2, '0');
+                        const dayStr = `${year}-${month}-${day}`;
+
+                        // Find matching appointments recursively
+                        const dayAppts = filteredAppointments.filter((appt) => {
+                          if (appt.date === dayStr) return true;
+                          try {
+                            const parsed = new Date(appt.date);
+                            return parsed.getFullYear() === year && 
+                                   parsed.getMonth() === cell.dateObj.getMonth() && 
+                                   parsed.getDate() === cell.dateObj.getDate();
+                          } catch {
+                            return false;
+                          }
+                        });
+
+                        const isToday = new Date().toDateString() === cell.dateObj.toDateString();
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`min-h-[95px] border p-2 rounded flex flex-col justify-between transition-all ${
+                              cell.isCurrentMonth
+                                ? 'bg-black border-white/10 hover:border-[#C5A85D]/40'
+                                : 'bg-zinc-950/40 border-white/5 text-gray-700'
+                            } ${isToday ? 'ring-1 ring-[#C5A85D] bg-[#C5A85D]/5' : ''}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[10px] font-mono ${
+                                cell.isCurrentMonth 
+                                  ? isToday ? 'text-[#C5A85D] font-bold' : 'text-gray-300'
+                                  : 'text-gray-600'
+                              }`}>
+                                {cell.day}
+                              </span>
+                              {dayAppts.length > 0 && cell.isCurrentMonth && (
+                                <span className="w-2 h-2 rounded-full bg-[#C5A85D] animate-ping" />
+                              )}
+                            </div>
+
+                            {/* Show summary labels */}
+                            <div className="space-y-1 mt-1.5 flex-1 flex flex-col justify-end">
+                              {cell.isCurrentMonth && dayAppts.slice(0, 2).map((a) => (
+                                <div
+                                  key={a.id}
+                                  onClick={() => {
+                                    // Quick status rotation
+                                    const nextStatusMap: Record<string, string> = {
+                                      'Pending': 'Confirmed',
+                                      'Confirmed': 'Completed',
+                                      'Completed': 'Canceled',
+                                      'Canceled': 'Pending'
+                                    };
+                                    const nextStatus = nextStatusMap[a.status] || 'Pending';
+                                    handleApptStatusChange(a.id, nextStatus as any);
+                                  }}
+                                  className={`text-[8px] uppercase tracking-wide font-sans p-1 rounded font-bold truncate cursor-pointer hover:brightness-125 ${
+                                    a.status === 'Confirmed'
+                                      ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-800/40'
+                                      : a.status === 'Completed'
+                                      ? 'bg-zinc-800/60 text-zinc-400 border border-zinc-700/30'
+                                      : 'bg-amber-950/40 text-amber-300 border border-amber-800/40'
+                                  }`}
+                                  title={`Click to rotate status. Groom: ${a.customerName} - ${a.time} - Venue: ${a.branch}`}
+                                >
+                                  {a.customerName.split(' ')[0]} {a.time}
+                                </div>
+                              ))}
+                              {dayAppts.length > 2 && cell.isCurrentMonth && (
+                                <div className="text-[7px] text-[#C5A85D] text-center font-mono font-bold">
+                                  +{dayAppts.length - 2} MORE
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+
+                {/* Show mini legend info */}
+                <div className="bg-[#121212]/35 p-3 rounded border border-white/5 text-[9px] uppercase tracking-widest text-gray-500 font-sans flex flex-wrap items-center justify-center gap-4">
+                  <span className="font-bold text-[#C5A85D]">Interactive Calendar Rules:</span>
+                  <span className="flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" /> Yellow = Pending (Click to Confirm)</span>
+                  <span className="flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5" /> Green = Confirmed (Click to Complete)</span>
+                  <span className="flex items-center"><span className="w-1.5 h-1.5 rounded-full bg-zinc-600 mr-1.5" /> Gray = Completed / Visited</span>
+                </div>
+              </div>
+            ) : (
+              /* Showroom Bookings List Index */
+              <div className="space-y-4">
+                {filteredAppointments.length > 0 ? (
+                  filteredAppointments.map((appt) => (
+                    <div
+                      key={appt.id}
+                      className="bg-[#121212] border border-white/10 p-5 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative overflow-hidden"
+                    >
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] uppercase tracking-widest text-[#C5A85D] font-mono leading-none">
+                            APPT: #{appt.id.replace('appt-', '')}
+                          </span>
+                          <h4 className="font-display font-medium text-base text-white tracking-widest uppercase">
+                            {appt.customerName}
+                          </h4>
+                          <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-sans tracking-wide ${
+                            appt.status === 'Confirmed' ? 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20' :
+                            appt.status === 'Completed' ? 'bg-zinc-800 text-zinc-400' : 'bg-amber-600/10 text-amber-500'
+                          }`}>
+                            {appt.status}
+                          </span>
+                        </div>
+
+                        <p className="text-gray-400 font-sans text-xs mt-2 font-medium">
+                          📍 Showroom Venue: <span className="text-[#E5C46D]">{appt.branch}</span>
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-4 mt-3 text-xs font-sans text-gray-300">
+                          <p>🕒 Time booked: <strong>{appt.date} at {appt.time}</strong></p>
+                          <p>💬 Groom Phone: <strong>{appt.customerPhone}</strong></p>
+                        </div>
+                      </div>
+
+                      {/* Appt Modifier */}
+                      <div className="flex items-center space-x-3 shrink-0">
+                        
+                        <select
+                          value={appt.status}
+                          onChange={(e) => handleApptStatusChange(appt.id, e.target.value as any)}
+                          className="bg-black text-[#C5A85D] text-xs font-sans border border-[#C5A85D]/20 px-2.5 py-1.5 rounded focus:outline-none"
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Confirmed">Confirmed</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Canceled">Canceled</option>
+                        </select>
+
+                        <a
+                          href={`tel:${appt.customerPhone.replace(/\s+/g, '')}`}
+                          className="p-2.5 bg-zinc-800 text-[#C5A85D] rounded hover:bg-[#C5A85D] hover:text-black transition-colors"
+                          title="Contact customer"
+                        >
+                          <Phone className="w-4 h-4" />
+                        </a>
+
+                      </div>
+
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-12 text-[#C5A85D] font-serif uppercase tracking-widest bg-[#121212] border border-white/5 rounded">
+                    No Showroom appointments recorded.
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
         )}

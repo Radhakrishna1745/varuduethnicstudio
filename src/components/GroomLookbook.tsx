@@ -185,7 +185,7 @@ export default function GroomLookbook() {
               {/* Inquiry Action shortcut directly inside gallery! */}
               <div className="mt-4 flex justify-center">
                 <a
-                  href={`https://wa.me/919505122400?text=Hi%20Varudu!%20I%20am%20exploring%20your%20Groom%20Lookbook.%20I%20saw%20the%20"${currentImageObj.title}"%20composition%20and%20would%20love%20to%20know%20if%20this%20cut%20is%20available%20for%20fitting.`}
+                  href={`https://wa.me/919000777265?text=Hi%20Varudu!%20I%20am%20exploring%20your%20Groom%20Lookbook.%20I%20saw%20the%20"${currentImageObj.title}"%20composition%20and%20would%20love%20to%20know%20if%20this%20cut%20is%20available%20for%20fitting.`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-[10px] uppercase font-semibold tracking-widest rounded transition-all flex items-center space-x-2.5 shadow"

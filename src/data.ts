@@ -135,7 +135,7 @@ export const STORE_LOCATIONS: StoreLocation[] = [
     parkingInfo: 'Valet Parking & Dedicated Ground Frontage Parking available',
     mapEmbedUrl: 'https://maps.google.com/maps?q=17.3682053,78.5309888&z=16&ie=UTF8&iwloc=&output=embed',
     imageUrl: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=800',
-    whatsappLink: 'https://wa.me/919505122400?text=Hi%20Varudu%20Ethnic%20Studio!%20I%20want%20to%20visit%20your%20Chaitanyapuri%20showroom.%20Please%20guide%20me%20with%20directions.'
+    whatsappLink: 'https://wa.me/919000777265?text=Hi%20Varudu%20Ethnic%20Studio!%20I%20want%20to%20visit%20your%20Chaitanyapuri%20showroom.%20Please%20guide%20me%20with%20directions.'
   },
   {
     id: 'loc-sec',
@@ -146,7 +146,7 @@ export const STORE_LOCATIONS: StoreLocation[] = [
     parkingInfo: 'Valet Parking & Dedicated Frontage Parking Spaces Available for Grooms',
     mapEmbedUrl: 'https://maps.google.com/maps?q=17.4697413,78.5089814&z=16&ie=UTF8&iwloc=&output=embed',
     imageUrl: 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?auto=format&fit=crop&q=80&w=800',
-    whatsappLink: 'https://wa.me/919505122400?text=Hi%20Varudu%20Ethnic%20Studio!%20I%20want%20to%20visit%20your%20Secunderabad%20Thirumalagiri%20showroom.%20Please%20guide%20me%20with%20directions.'
+    whatsappLink: 'https://wa.me/919000777265?text=Hi%20Varudu%20Ethnic%20Studio!%20I%20want%20to%20visit%20your%20Secunderabad%20Thirumalagiri%20showroom.%20Please%20guide%20me%20with%20directions.'
   }
 ];
 

@@ -170,7 +170,7 @@ export default function App() {
 
     // Prepare robust WhatsApp text notification template to notify the showroom owner of the new appointment booking
     const text = `*NEW SHOWROOM APPOINTMENT SELECTED*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Groom Name:* ${apptData.customerName}\n📞 *Phone Number:* ${apptData.customerPhone}\n📧 *Email:* ${apptData.customerEmail || 'None provided'}\n🏢 *Selected Showroom:* ${apptData.branch}\n📅 *Appointment Slot:* ${apptData.date} at ${apptData.time}\n🏛️ *Occasion details:* ${apptData.occasion}\n━━━━━━━━━━━━━━━━━━━━\n✨ _Logged instantly database backed with live Firebase! _`;
-    const whatsappUrl = `https://wa.me/919505122400?text=${encodeURIComponent(text)}`;
+    const whatsappUrl = `https://wa.me/919000777265?text=${encodeURIComponent(text)}`;
     
     // Automatically open WhatsApp in background to log the appointment notification directly to owner
     setTimeout(() => {
@@ -446,7 +446,7 @@ export default function App() {
 
                   <div className="mt-8 gap-4 flex flex-col sm:flex-row justify-center">
                     <a
-                      href={`https://wa.me/919505122400?text=Hi%20Varudu!%20I%20have%20successfully%20reserved%20appointment%20ticket%20%23${apptSuccessTicket.id.replace('appt-', '')}.%20Please%20verify%20my%20slot%20for%20fitting.`}
+                      href={`https://wa.me/919000777265?text=Hi%20Varudu!%20I%20have%20successfully%20reserved%20appointment%20ticket%20%23${apptSuccessTicket.id.replace('appt-', '')}.%20Please%20verify%20my%20slot%20for%20fitting.`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs uppercase font-bold tracking-widest rounded transition-transform shadow flex items-center justify-center space-x-2"
@@ -915,7 +915,7 @@ export default function App() {
 
                   <div className="grid grid-cols-2 gap-2">
                     <a
-                      href="https://wa.me/919505122400?text=Hello%20Varudu!%20I%20am%20looking%20to%20discuss%20a%20luxury%20groom%20customization%20fitting%20at%20Chaitanyapuri."
+                      href="https://wa.me/919000777265?text=Hello%20Varudu!%20I%20am%20looking%20to%20discuss%20a%20luxury%20groom%20customization%20fitting%20at%20Chaitanyapuri."
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-center py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-[10px] uppercase font-bold tracking-widest rounded transition-all block"
@@ -923,7 +923,7 @@ export default function App() {
                       Chaitanyapuri WA
                     </a>
                     <a
-                      href="https://wa.me/919505122400?text=Hello%20Varudu!%20I%20am%20looking%20to%20discuss%20a%20luxury%20groom%20customization%20fitting%20at%20Thirumalagiri."
+                      href="https://wa.me/919000777265?text=Hello%20Varudu!%20I%20am%20looking%20to%20discuss%20a%20luxury%20groom%20customization%20fitting%20at%20Thirumalagiri."
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-center py-2.5 bg-[#C5A85D] hover:bg-[#D5B86D] text-black font-sans text-[10px] uppercase font-bold tracking-widest rounded transition-all block"
@@ -1065,7 +1065,7 @@ export default function App() {
 
         <div className="grid grid-cols-2 gap-3 w-full lg:w-auto flex-1 lg:flex-initial">
           <a
-            href="https://wa.me/919505122400?text=Hi%20Varudu!%20I%20am%20interested%20in%20a%20Groom%20Wedding%20Couture%20Inquiry."
+            href="https://wa.me/919000777265?text=Hi%20Varudu!%20I%20am%20interested%20in%20a%20Groom%20Wedding%20Couture%20Inquiry."
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center space-x-2 py-3 px-4 sm:px-6 bg-[#121212] hover:bg-[#1C1C1C] text-emerald-400 border border-emerald-500/30 text-xs font-sans font-bold uppercase tracking-widest rounded"

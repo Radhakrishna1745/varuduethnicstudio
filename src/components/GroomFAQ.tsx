@@ -216,7 +216,7 @@ export default function GroomFAQ() {
                 Connect directly with our master designers in Chaitanyapuri Lounge via WhatsApp. Send custom sketches or seek rapid sizing solutions.
               </p>
               <a 
-                href="https://wa.me/919505122400?text=Hello%20Varudu%20Ethnic%20Studio%20stylist!%20I%20have%20an%20inquiry%20regarding%20groom%20sherwani%20fitting%20and%20timeline%20coordination."
+                href="https://wa.me/919000777265?text=Hello%20Varudu%20Ethnic%20Studio%20stylist!%20I%20have%20an%20inquiry%20regarding%20groom%20sherwani%20fitting%20and%20timeline%20coordination."
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center justify-center space-x-2 w-full py-3 bg-[#E5C46D] hover:bg-[#F5D47D] text-black font-sans text-xs font-bold uppercase tracking-widest rounded transition-all shadow-lg"

@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Calendar, Upload, MessageSquare, MapPin, Sparkles, Shield, Trophy, Ruler } from 'lucide-react';
-import { getWebPhoto } from '../utils';
+import { getScheduledHeroBanners } from '../utils';
+import { HeroBanner } from '../types';
 
 interface HeroProps {
   onNavigate: (viewId: string) => void;
@@ -13,76 +14,65 @@ interface HeroProps {
 
 export default function FullscreenHero({ onNavigate }: HeroProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [slideImages, setSlideImages] = useState<string[]>([
-    'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600',
-    'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600',
-    'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600'
-  ]);
+  const [banners, setBanners] = useState<HeroBanner[]>(() => getScheduledHeroBanners());
 
-  const slides = [
-    {
-      image: slideImages[0],
-      title: 'Where Royal Weddings Begin',
-      subtitle: 'INDIAS PREMIER GROOM COUTURE STUDIO',
-      description: 'Step into a world of timeless majesty. Handcrafted sherwanis tailored meticulously by generational master craftsmen to make your entry truly legendary.'
-    },
-    {
-      image: slideImages[1],
-      title: 'Crafting the Groom of Your Dreams',
-      subtitle: 'EXCLUSIVE BRIDAL SHERWANIS',
-      description: 'Zardozi wire-work woven with real gold threads, semi-precious stone embellishments, and rich handspun silk drapes styled specifically for the elite groom.'
-    },
-    {
-      image: slideImages[2],
-      title: 'India’s Premium Groom Fashion Destination',
-      subtitle: 'THE MODERN RAJPUTANA CHIC',
-      description: 'Explore state-of-the-art Indo-western structures, velvet Nawabi Peshawari sets, and sharp Italian Wool-mix bundis crafted strictly for high-converting celebrations.'
-    }
-  ];
-
-  const loadCustomPhotos = async () => {
-    const img0 = await getWebPhoto('web_photo_hero_0', 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600');
-    const img1 = await getWebPhoto('web_photo_hero_1', 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600');
-    const img2 = await getWebPhoto('web_photo_hero_2', 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600');
-    setSlideImages([img0, img1, img2]);
+  const loadCustomBanners = () => {
+    const activeBanners = getScheduledHeroBanners();
+    setBanners(activeBanners);
+    // Restart slide tracking if count changed
+    setCurrentSlide(0);
   };
 
   useEffect(() => {
-    loadCustomPhotos();
+    loadCustomBanners();
 
     const interval = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % slides.length);
+      setBanners((prev) => {
+        if (prev.length > 0) {
+          setCurrentSlide((prevIndex) => (prevIndex + 1) % prev.length);
+        }
+        return prev;
+      });
     }, 8000);
 
-    window.addEventListener('varudu-photo-updated', loadCustomPhotos);
-    window.addEventListener('varudu-settings-updated', loadCustomPhotos);
+    window.addEventListener('varudu-banners-updated', loadCustomBanners);
+    window.addEventListener('varudu-settings-updated', loadCustomBanners);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('varudu-photo-updated', loadCustomPhotos);
-      window.removeEventListener('varudu-settings-updated', loadCustomPhotos);
+      window.removeEventListener('varudu-banners-updated', loadCustomBanners);
+      window.removeEventListener('varudu-settings-updated', loadCustomBanners);
     };
   }, []);
+
+  // Standard safe slide getter
+  const activeSlide = banners[currentSlide] || {
+    imageUrl: 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600',
+    title: 'Where Royal Weddings Begin',
+    subtitle: 'INDIAS PREMIER GROOM COUTURE STUDIO',
+    description: 'Step into a world of timeless majesty. Handcrafted sherwanis tailored meticulously by generational master craftsmen to make your entry truly legendary.'
+  };
 
   return (
     <section className="relative min-h-[92vh] sm:min-h-screen flex items-center justify-center bg-black overflow-hidden" id="fullscreen-epic-hero">
       
       {/* Cinematic Background Slideshow */}
-      {slides.map((slide, index) => (
+      {banners.map((slide, index) => (
         <div
-          key={index}
+          key={slide.id || index}
           className={`absolute inset-0 transition-opacity duration-1500 cubic-bezier(0.4, 0, 0.2, 1) ${
             index === currentSlide ? 'opacity-70 z-0' : 'opacity-0 -z-10'
           }`}
         >
           {/* Zoom Overlay (Ken Burns Animation) */}
           <img
-            src={slide.image}
-            alt="Royal Indian Groom Fashion"
+            src={slide.imageUrl}
+            alt={slide.title}
             className={`w-full h-full object-cover object-top ${
               index === currentSlide ? 'animate-ken-burns' : ''
             }`}
             referrerPolicy="no-referrer"
+            loading="lazy"
           />
           {/* Luxury heavy gradient mask overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/60 to-black/30" />
@@ -119,7 +109,7 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
         <div className="inline-flex items-center space-x-2 bg-[#4A0E17]/80 px-4 py-1.5 rounded-full border border-[#C5A85D]/40 mb-6 backdrop-blur-sm">
           <Sparkles className="w-3.5 h-3.5 text-[#E5C46D] animate-spin" style={{ animationDuration: '4s' }} />
           <span className="font-sans text-[9px] sm:text-[11px] font-semibold tracking-[0.3em] uppercase text-[#F5EFEB]">
-            {slides[currentSlide].subtitle}
+            {activeSlide.subtitle}
           </span>
         </div>
 
@@ -129,13 +119,13 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
             The Royal Wardrobe of
           </span>
           <span className="text-gold-gradient font-bold drop-shadow-2xl">
-            {slides[currentSlide].title}
+            {activeSlide.title}
           </span>
         </h1>
 
         {/* Editorial Subdescription */}
         <p className="max-w-2xl mx-auto font-serif text-base sm:text-xl text-[#F5EFEB]/80 leading-relaxed tracking-wider mb-10 drop-shadow-md">
-          {slides[currentSlide].description}
+          {activeSlide.description}
         </p>
 
         {/* HIGH-CONVERSION HIGH-PERFORMANCE CTA BLOCK */}
@@ -158,7 +148,7 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
           </button>
 
           <a
-            href="https://wa.me/919505122400?text=Hi%20Varudu%20Ethnic%20Studio!%20I%20am%20a%20groom%20planning%20my%20wedding.%20I%20would%20love%20to%20connect%20with%20a%20creative%20groom%20stylist%20to%20help%20me%20design%20my%20dream%20Sherwani."
+            href="https://wa.me/919000777265?text=Hi%20Varudu%20Ethnic%20Studio!%20I%20am%20a%20groom%20planning%20my%20wedding.%20I%20would%20love%20to%20connect%20with%20a%20creative%20groom%20stylist%20to%20help%20me%20design%20my%20dream%20Sherwani."
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center space-x-3 w-full py-3.5 px-6 bg-[#121212] hover:bg-[#1C1C1C] text-emerald-400 border border-emerald-500/30 font-sans font-semibold text-xs uppercase tracking-[0.15em] rounded transition-transform duration-300 hover:scale-103 cursor-pointer font-medium"

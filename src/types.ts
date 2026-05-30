@@ -38,7 +38,7 @@ export interface Appointment {
 export interface ProductCollection {
   id: string;
   name: string;
-  category: 'Sherwani' | 'Indo-Western' | 'Kurta-Pajama' | 'Reception-Wear' | 'Groom-Accessories';
+  category: 'Sherwani' | 'Indo-Western' | 'Kurta-Pajama' | 'Reception-Wear' | 'Groom-Accessories' | 'Sherwanis' | 'Indo-Westerns' | 'Tuxedos' | 'Kurta Sets' | 'Reception Wear' | 'Accessories';
   description: string;
   priceRange: string;
   imageUrl: string;
@@ -46,6 +46,20 @@ export interface ProductCollection {
   highlights: string[];
   tags: string[];
   features: string[];
+  images?: string[]; // Multiple images support per collection
+  featured?: boolean; // Highlighted or featured flag
+}
+
+export interface HeroBanner {
+  id: string;
+  imageUrl: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  startDate?: string; // ISO date or YYYY-MM-DD
+  endDate?: string;   // ISO date or YYYY-MM-DD
+  enabled: boolean;
+  order: number;
 }
 
 export interface StyleBlog {
