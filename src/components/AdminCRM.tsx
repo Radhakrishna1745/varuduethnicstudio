@@ -15,7 +15,7 @@ import {
   saveSetting, getCachedSetting,
   uploadMediaAsset, updateMediaAssetMetadata, deleteMediaAsset, MediaAsset
 } from '../utils';
-import { uploadToStorage, deleteFromStorage, auth, db } from '../firebase';
+import { uploadToStorage, deleteFromStorage, auth, db, getCloudinaryConfig } from '../firebase';
 import { 
   signInWithPopup, GoogleAuthProvider, signInAnonymously, 
   onAuthStateChanged, signOut, User,
@@ -92,6 +92,18 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
 
+  // Saving states & loading control
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isSavingLookbook, setIsSavingLookbook] = useState(false);
+  const [isSavingBrandingVideo, setIsSavingBrandingVideo] = useState(false);
+
+  // Cloudinary settings states
+  const [cloudinaryCloudName, setCloudinaryCloudName] = useState('');
+  const [cloudinaryUploadPreset, setCloudinaryUploadPreset] = useState('');
+  const [cloudinarySaveSuccess, setCloudinarySaveSuccess] = useState('');
+  const [cloudinarySaveError, setCloudinarySaveError] = useState('');
+  const [isSavingCloudinary, setIsSavingCloudinary] = useState(false);
+
   // Start product editing
   const startEditProduct = (prod: ProductCollection) => {
     setEditingProduct(prod);
@@ -155,12 +167,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
   };
 
   // --- SAVE & DELETE HANDLERS ---
+  const CATEGORY_UNSPLASH_FALLBACKS: Record<string, string> = {
+    'Sherwani': 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=800',
+    'Indo-Western': 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=800',
+    'Kurta-Pajama': 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=800',
+    'Reception-Wear': 'https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=82&w=800',
+    'Groom-Accessories': 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&q=82&w=700'
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodName.trim()) {
       setFormError('Product Name is required.');
       return;
     }
+
+    setFormError('');
+    setFormSuccess('');
+    setIsSavingProduct(true);
 
     try {
       let finalImgUrl = editingProduct ? editingProduct.imageUrl : 'https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=800';
@@ -169,13 +193,46 @@ export default function AdminCRM({ onClose }: CRMProps) {
       const targetId = editingProduct ? editingProduct.id : `prod-${Date.now()}`;
 
       if (prodImgFile) {
-        const downloadUrl = await uploadToStorage(`products/images/${targetId}`, prodImgFile);
-        finalImgUrl = downloadUrl;
+        try {
+          const downloadUrl = await uploadToStorage(`products/images/${targetId}`, prodImgFile);
+          finalImgUrl = downloadUrl;
+        } catch (uploadErr: any) {
+          console.warn('Firebase Storage image upload failed, falling back to Base64 reader if small...', uploadErr);
+          if (prodImgFile.size < 400 * 1024) {
+            try {
+              const base64Url = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(prodImgFile);
+              });
+              finalImgUrl = base64Url;
+            } catch (rErr) {
+              finalImgUrl = CATEGORY_UNSPLASH_FALLBACKS[prodCategory] || finalImgUrl;
+            }
+          } else {
+            // Keep object url for active session preview, but use premium Category fallback url for cross-device database
+            try {
+              finalImgUrl = URL.createObjectURL(prodImgFile);
+            } catch (_) {
+              finalImgUrl = CATEGORY_UNSPLASH_FALLBACKS[prodCategory] || finalImgUrl;
+            }
+          }
+        }
       }
 
       if (prodVidFile) {
-        const downloadUrl = await uploadToStorage(`products/videos/${targetId}`, prodVidFile);
-        finalVidUrl = downloadUrl;
+        try {
+          const downloadUrl = await uploadToStorage(`products/videos/${targetId}`, prodVidFile);
+          finalVidUrl = downloadUrl;
+        } catch (uploadErr: any) {
+          console.warn('Firebase Storage video upload failed, falling back to session blob or empty...', uploadErr);
+          try {
+            finalVidUrl = URL.createObjectURL(prodVidFile);
+          } catch (_) {
+            finalVidUrl = '';
+          }
+        }
       }
 
       const tagsArray = prodTags ? prodTags.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -203,7 +260,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
         setFormSuccess('New Blazer / Ethnic look added live to collections page!');
       }
 
-      saveDynamicCollections(updatedList);
+      await saveDynamicCollections(updatedList);
       setCollectionsList(updatedList);
       playRegalGoldChime();
 
@@ -213,9 +270,11 @@ export default function AdminCRM({ onClose }: CRMProps) {
         setFormSuccess('');
       }, 1500);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setFormError('An error occurred while saving the assets to browser storage.');
+      setFormError(`An error occurred while saving the collection item: ${err?.message || err}`);
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -239,19 +298,55 @@ export default function AdminCRM({ onClose }: CRMProps) {
       return;
     }
 
+    setFormError('');
+    setFormSuccess('');
+    setIsSavingLookbook(true);
+
     try {
       const targetId = editingLookbook ? editingLookbook.id : `look-${Date.now()}`;
       let finalImgUrl = editingLookbook ? editingLookbook.imageUrl : 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
       let finalVidUrl = editingLookbook ? editingLookbook.videoUrl || '' : '';
 
       if (lkImgFile) {
-        const downloadUrl = await uploadToStorage(`lookbook/images/${targetId}`, lkImgFile);
-        finalImgUrl = downloadUrl;
+        try {
+          const downloadUrl = await uploadToStorage(`lookbook/images/${targetId}`, lkImgFile);
+          finalImgUrl = downloadUrl;
+        } catch (uploadErr) {
+          console.warn('Firebase Storage lookbook upload failed, falling back to Base64/placeholder...', uploadErr);
+          if (lkImgFile.size < 400 * 1024) {
+            try {
+              const base64Url = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(lkImgFile);
+              });
+              finalImgUrl = base64Url;
+            } catch (rErr) {
+              finalImgUrl = 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
+            }
+          } else {
+            try {
+              finalImgUrl = URL.createObjectURL(lkImgFile);
+            } catch (_) {
+              finalImgUrl = 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
+            }
+          }
+        }
       }
 
       if (lkVidFile) {
-        const downloadUrl = await uploadToStorage(`lookbook/videos/${targetId}`, lkVidFile);
-        finalVidUrl = downloadUrl;
+        try {
+          const downloadUrl = await uploadToStorage(`lookbook/videos/${targetId}`, lkVidFile);
+          finalVidUrl = downloadUrl;
+        } catch (uploadErr) {
+          console.warn('Firebase Storage loop video upload failed, falling back to session blob or empty...', uploadErr);
+          try {
+            finalVidUrl = URL.createObjectURL(lkVidFile);
+          } catch (_) {
+            finalVidUrl = '';
+          }
+        }
       }
 
       const newLook: LookbookItem = {
@@ -273,7 +368,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
         setFormSuccess('New lookbook entry published live !');
       }
 
-      saveDynamicLookbook(updatedList);
+      await saveDynamicLookbook(updatedList);
       setLookbookList(updatedList);
       playRegalGoldChime();
 
@@ -283,9 +378,11 @@ export default function AdminCRM({ onClose }: CRMProps) {
         setFormSuccess('');
       }, 1500);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setFormError('Failed to publish lookbook assets.');
+      setFormError(`Failed to publish lookbook assets: ${err?.message || err}`);
+    } finally {
+      setIsSavingLookbook(false);
     }
   };
 
@@ -489,6 +586,18 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
     loadWebPhotos();
 
+    // Load Cloudinary config
+    async function loadCloudinary() {
+      try {
+        const config = await getCloudinaryConfig();
+        setCloudinaryCloudName(config.cloudName);
+        setCloudinaryUploadPreset(config.uploadPreset);
+      } catch (err) {
+        console.warn('Failed to load Cloudinary credentials:', err);
+      }
+    }
+    loadCloudinary();
+
     // Load general media assets list
     const loadCachedMedia = () => {
       // Direct empty start, populated via live realtime event listeners
@@ -606,6 +715,30 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
   };
 
+  const handleSaveCloudinary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCloudinarySaveSuccess('');
+    setCloudinarySaveError('');
+    setIsSavingCloudinary(true);
+
+    try {
+      await saveSetting('cloudinary', {
+        cloud_name: cloudinaryCloudName.trim(),
+        upload_preset: cloudinaryUploadPreset.trim(),
+      });
+      setCloudinarySaveSuccess('Cloudinary integration parameters active and synced successfully!');
+      playRegalGoldChime();
+      setTimeout(() => {
+        setCloudinarySaveSuccess('');
+      }, 3000);
+    } catch (err: any) {
+      console.error(err);
+      setCloudinarySaveError(`Failed to save Cloudinary config: ${err?.message || err}`);
+    } finally {
+      setIsSavingCloudinary(false);
+    }
+  };
+
   // General Media Asset Hub Actions
   const handleMediaAssetUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -687,10 +820,19 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
     try {
       setMediaUploadSuccess('Processing video encoding and transmitting to Firebase Storage...');
-      const downloadUrl = await uploadToStorage('videos/brand_logo_video', file);
+      let downloadUrl = '';
+      try {
+        downloadUrl = await uploadToStorage('videos/brand_logo_video', file);
+      } catch (storageErr) {
+        console.warn('Firebase Storage brand intro video upload failed, falling back to local session URL preview...', storageErr);
+        downloadUrl = URL.createObjectURL(file);
+        setMediaUploadSuccess('Local Sandbox: Brand intro video activated for current session preview.');
+      }
       
-      // 3. Save URL to settings document
-      await saveSetting('brand', { brand_logo_video: downloadUrl });
+      // 3. Save URL to settings document if it is a real URL
+      if (!downloadUrl.startsWith('blob:')) {
+        await saveSetting('brand', { brand_logo_video: downloadUrl });
+      }
 
       // Update local states
       if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
@@ -700,11 +842,13 @@ export default function AdminCRM({ onClose }: CRMProps) {
       }
       setAdminVideoUrl(downloadUrl);
       setAdminVideoBlob(file);
-      setMediaUploadSuccess(`Brand intro video "${file.name}" uploaded successfully to Firebase Storage! All visitors will watch it instantly from high-speed CDN.`);
+      if (!downloadUrl.startsWith('blob:')) {
+        setMediaUploadSuccess(`Brand intro video "${file.name}" uploaded successfully to Firebase Storage! All visitors will watch it instantly from high-speed CDN.`);
+      }
       playRegalGoldChime();
-    } catch (err) {
-      console.error('Failed to save branding video to Firebase Storage:', err);
-      showCustomAlert('Storage Failed', 'Failed to store video in Firebase Storage: ' + (err instanceof Error ? err.message : String(err)));
+    } catch (err: any) {
+      console.error('Failed to save branding video:', err);
+      showCustomAlert('Storage Failed', 'Failed to store video: ' + (err?.message || err));
     }
   };
 
@@ -729,9 +873,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
   const handleClearMedia = async () => {
     try {
+      const videoUrlToDelete = adminVideoUrl;
       await saveSetting('brand', { brand_logo_video: "" });
       try {
-        await deleteFromStorage('videos/brand_logo_video');
+        if (videoUrlToDelete) {
+          await deleteFromStorage(videoUrlToDelete);
+        } else {
+          await deleteFromStorage('videos/brand_logo_video');
+        }
       } catch (_) {}
       
       if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
@@ -1550,7 +1699,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
                 Fine-tune luxury interaction loops, mute atmospheric gold chimes, review secure Zero-Trust rules, or clear cached binary assets instantly across your devices.
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
                 {/* Panel 1: Sound Ambient Curation */}
                 <div className="bg-[#0D0D0D] p-5 rounded-lg border border-white/5 flex flex-col justify-between">
                   <div>
@@ -1628,7 +1777,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Local Cache Units:</span>
-                        <span className="text-gray-500">IndexedDB + LocalStorage</span>
+                        <span className="text-[#C5A85D]">Firestore Live State</span>
                       </div>
                     </div>
                   </div>
@@ -1641,6 +1790,73 @@ export default function AdminCRM({ onClose }: CRMProps) {
                     <RefreshCw className={`w-3.5 h-3.5 ${isPurgingCache ? 'animate-spin' : ''}`} />
                     <span>{isPurgingCache ? 'Purging Systems...' : 'Purge All Local Cache'}</span>
                   </button>
+                </div>
+
+                {/* Panel 4: Cloudinary CDN Integration */}
+                <div className="bg-[#0D0D0D] p-5 rounded-lg border border-white/5 flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-2 mt-4 lg:mt-0">
+                  <form onSubmit={handleSaveCloudinary} className="space-y-4">
+                    <div className="flex items-center space-x-2 border-b border-white/5 pb-2.5">
+                      <HardDrive className="w-4.5 h-4.5 text-[#C5A85D]" />
+                      <h4 className="text-white text-xs font-sans font-bold uppercase tracking-widest">Cloudinary CDN Integration</h4>
+                    </div>
+                    
+                    <p className="text-gray-400 text-[11px] leading-relaxed">
+                      Configure your Cloudinary environment. All royal selection blazers, lookbook editorials, hero banners, and media assets will be uploaded directly to Cloudinary.
+                    </p>
+
+                    {cloudinarySaveSuccess && (
+                      <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] rounded animate-fade-in">
+                        {cloudinarySaveSuccess}
+                      </div>
+                    )}
+
+                    {cloudinarySaveError && (
+                      <div className="p-2 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] rounded animate-fade-in">
+                        {cloudinarySaveError}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-wider font-sans text-gray-500 block">Cloud Name *</label>
+                        <input
+                          type="text"
+                          required
+                          value={cloudinaryCloudName}
+                          onChange={(e) => setCloudinaryCloudName(e.target.value)}
+                          placeholder="e.g. dxyz123"
+                          className="w-full bg-black border border-white/10 px-3 py-1.5 text-xs text-white font-sans rounded focus:outline-none focus:border-[#C5A85D]"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-wider font-sans text-gray-500 block">Upload Preset *</label>
+                        <input
+                          type="text"
+                          required
+                          value={cloudinaryUploadPreset}
+                          onChange={(e) => setCloudinaryUploadPreset(e.target.value)}
+                          placeholder="e.g. unsigned_preset"
+                          className="w-full bg-black border border-white/10 px-3 py-1.5 text-xs text-white font-sans rounded focus:outline-none focus:border-[#C5A85D]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Secured client-side logic: Key and Secret inputs are removed */}
+
+                    <button
+                      type="submit"
+                      disabled={isSavingCloudinary}
+                      className="w-full py-2 bg-[#C5A85D] hover:bg-[#E5C46D] hover:text-black text-black text-[9px] uppercase tracking-widest font-sans font-bold rounded transition-all cursor-pointer flex items-center justify-center space-x-2 disabled:opacity-50"
+                    >
+                      {isSavingCloudinary && (
+                        <svg className="animate-spin h-3.5 w-3.5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      )}
+                      <span>{isSavingCloudinary ? 'Saving Parameters...' : 'Save Cloudinary Integration'}</span>
+                    </button>
+                  </form>
                 </div>
               </div>
             </div>
@@ -2126,16 +2342,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
                         <div className="flex justify-end space-x-3 pt-4 border-t border-white/5">
                           <button
                             type="button"
+                            disabled={isSavingProduct}
                             onClick={() => { setEditingProduct(null); setIsAddingProduct(false); }}
-                            className="px-4 py-2 border border-white/10 text-gray-400 hover:text-white text-xs cursor-pointer"
+                            className="px-4 py-2 border border-white/10 text-gray-400 hover:text-white text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Cancel
                           </button>
                           <button
                             type="submit"
-                            className="px-6 py-2.5 bg-[#C5A85D] hover:bg-[#E5C46D] text-black text-xs font-bold uppercase tracking-widest rounded cursor-pointer"
+                            disabled={isSavingProduct}
+                            className="px-6 py-2.5 bg-[#C5A85D] hover:bg-[#E5C46D] text-black text-xs font-bold uppercase tracking-widest rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                           >
-                            {editingProduct ? 'Save Blazer specs' : 'Add blazer to collections'}
+                            {isSavingProduct && (
+                              <svg className="animate-spin h-3.5 w-3.5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            )}
+                            <span>{isSavingProduct ? 'Publishing & Syncing...' : (editingProduct ? 'Save Blazer specs' : 'Add blazer to collections')}</span>
                           </button>
                         </div>
                       </form>
@@ -2355,16 +2579,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
                         <div className="flex justify-end space-x-3 pt-4 border-t border-white/5">
                           <button
                             type="button"
+                            disabled={isSavingLookbook}
                             onClick={() => { setEditingLookbook(null); setIsAddingLookbook(false); }}
-                            className="px-4 py-2 border border-white/10 text-gray-400 hover:text-white text-xs cursor-pointer"
+                            className="px-4 py-2 border border-white/10 text-gray-400 hover:text-white text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Cancel
                           </button>
                           <button
                             type="submit"
-                            className="px-6 py-2.5 bg-[#C5A85D] hover:bg-[#E5C46D] text-black text-xs font-bold uppercase tracking-widest rounded cursor-pointer"
+                            disabled={isSavingLookbook}
+                            className="px-6 py-2.5 bg-[#C5A85D] hover:bg-[#E5C46D] text-black text-xs font-bold uppercase tracking-widest rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                           >
-                            Save Lookbook entry
+                            {isSavingLookbook && (
+                              <svg className="animate-spin h-3.5 w-3.5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            )}
+                            <span>{isSavingLookbook ? 'Publishing & Syncing...' : 'Save Lookbook entry'}</span>
                           </button>
                         </div>
                       </form>

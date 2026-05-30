@@ -6,7 +6,7 @@
 import { CustomerLead, Appointment, ProductCollection, LookbookItem } from './types';
 import { COLLECTIONS, LOOKBOOK_GALLERY } from './data';
 import { collection, doc, setDoc, updateDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType, uploadToStorage, deleteFromStorage } from './firebase';
+import { db, handleFirestoreError, OperationType, uploadToStorage, deleteFromStorage, parseCloudinaryUrlOrPath } from './firebase';
 
 // Key names kept for backward compatibility if any imports or type dependencies refer to them
 export const LEADS_KEY = 'varudu_leads';
@@ -486,7 +486,18 @@ export const getWebPhoto = async (key: string, defaultUrl: string): Promise<stri
 export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
   try {
     const path = `hero-banners/${key}`;
-    const downloadUrl = await uploadToStorage(path, file);
+    let downloadUrl = '';
+    try {
+      downloadUrl = await uploadToStorage(path, file);
+    } catch (storageErr) {
+      console.warn('Firebase Storage saveWebPhoto failed, converting to Base64 data URL fallback:', storageErr);
+      downloadUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
     
     // Save mapping in settings Firestore document
     await saveSetting('web_photos', { [key]: downloadUrl });
@@ -501,12 +512,17 @@ export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
 
 export const deleteWebPhoto = async (key: string): Promise<void> => {
   try {
+    const cachedUrl = getCachedSetting('web_photos', key, '');
     // Remove references in Firestore Settings by setting the key to ""
     await saveSetting('web_photos', { [key]: "" });
-    // Delete file from Firebase Storage
-    await deleteFromStorage(`hero-banners/${key}`);
+    // Delete file from Cloudinary Storage
+    if (cachedUrl) {
+      await deleteFromStorage(cachedUrl);
+    } else {
+      await deleteFromStorage(`hero-banners/${key}`);
+    }
   } catch (error) {
-    console.warn('Failed to delete web photo from Firebase:', error);
+    console.warn('Failed to delete web photo from Cloudinary:', error);
   }
   window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key } }));
 };
@@ -522,10 +538,13 @@ export interface MediaAsset {
   uploadDate: string;
   category: 'images' | 'videos' | 'hero-banners' | 'groom-collections';
   fileType: 'image' | 'video';
+  public_id?: string;
+  secure_url?: string;
+  media_type?: 'image' | 'video';
 }
 
 /**
- * Uploads any image or video to Firebase Storage under the appropriate folder, Name-encoded,
+ * Uploads any image or video to Cloudinary under the appropriate folder, Name-encoded,
  * and saves its registration entry in Firestore `/media/{mediaId}`.
  */
 export const uploadMediaAsset = async (
@@ -541,9 +560,21 @@ export const uploadMediaAsset = async (
   
   // Format the folder path: folder_prefix/unique_id_cleanName
   const storagePath = `${category}/${mediaId}_${cleanName}`;
-  const fileUrl = await uploadToStorage(storagePath, file);
+  let fileUrl = '';
+  try {
+    fileUrl = await uploadToStorage(storagePath, file);
+  } catch (storageErr) {
+    console.warn('Cloudinary uploadMediaAsset failed, converting to Base64 data URL fallback:', storageErr);
+    fileUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
   
   const fileType = file.type?.startsWith('video/') ? 'video' : 'image';
+  const { publicId } = parseCloudinaryUrlOrPath(fileUrl);
   
   const mediaItem: MediaAsset = {
     id: mediaId,
@@ -552,7 +583,10 @@ export const uploadMediaAsset = async (
     fileUrl,
     uploadDate: new Date().toISOString(),
     category,
-    fileType
+    fileType,
+    public_id: publicId || mediaId,
+    secure_url: fileUrl,
+    media_type: fileType,
   };
   
   // Save registry in Firestore
@@ -587,10 +621,14 @@ export const deleteMediaAsset = async (mediaId: string, fileUrl: string, categor
     // 1. Delete from Firestore
     await deleteDoc(doc(db, 'media', mediaId));
     
-    // 2. Delete from Firebase Storage
-    const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `${category}/${mediaId}_${cleanName}`;
-    await deleteFromStorage(storagePath);
+    // 2. Delete from Cloudinary Storage
+    if (fileUrl) {
+      await deleteFromStorage(fileUrl);
+    } else {
+      const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `${category}/${mediaId}_${cleanName}`;
+      await deleteFromStorage(storagePath);
+    }
   } catch (error) {
     console.error('Failed to complete delete asset flow:', error);
   }
