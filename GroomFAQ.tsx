@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Montserrat:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Poppins:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+  --font-sans: "Poppins", "Montserrat", system-ui, sans-serif;
+  --font-display: "Playfair Display", serif;
+  
+  --color-gold-light: #E5C46D;
+  --color-gold: #C5A85D;
+  --color-gold-dark: #A5843E;
+  
+  --color-maroon-soft: #5F1924;
+  --color-maroon: #4A0E17;
+  --color-maroon-dark: #2F050B;
+  
+  --color-charcoal: #121212;
+  --color-luxury-black: #0A0A0A;
+  --color-champagne: #F5EFEB;
+  --color-ivory: #FAFAFA;
+  
+  --z-55: 55;
+}
+
+/* Custom premium scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0A;
+}
+::-webkit-scrollbar-thumb {
+  background: #C5A85D;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #E5C46D;
+}
+
+/* Custom premium cinematic glass effect */
+.glass-premium {
+  background: rgba(18, 18, 18, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(197, 168, 93, 0.15);
+}
+
+/* Golden text gradient */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #FFF 0%, #F5EFEB 30%, #C5A85D 70%, #E5C46D 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Luxury button transition pulse */
+@keyframes gold-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(197, 168, 93, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(197, 168, 93, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(197, 168, 93, 0);
+  }
+}
+
+.animate-gold-pulse {
+  animation: gold-pulse 2s infinite;
+}
+
+/* Cinematic Ken Burns slow zooming */
+@keyframes ken-burns {
+  0% {
+    transform: scale(1.0);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1.0);
+  }
+}
+
+.animate-ken-burns {
+  animation: ken-burns 24s ease-in-out infinite;
+}
+
+/* Floating particle simulator */
+@keyframes float {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  90% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-100px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.particle {
+  position: absolute;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(229,196,109,0.8) 0%, rgba(197,168,93,0) 70%);
+  border-radius: 50%;
+  animation: float linear infinite;
+}
+
+/* Soft maroon breathing background */
+@keyframes maroon-glow {
+  0%, 100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.maroon-glow-bg {
+  animation: maroon-glow 8s ease-in-out infinite;
+}
