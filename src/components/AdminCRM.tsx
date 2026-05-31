@@ -4,17 +4,18 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner } from '../types';
+import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner, StaticPhoto, StaticPhotoKey } from '../types';
 import { 
-  getStoredLeads, updateLeadStatus, 
-  getStoredAppointments, updateAppointmentStatus,
+  getStoredLeads, updateLeadStatus, deleteLead,
+  getStoredAppointments, updateAppointmentStatus, deleteAppointment,
   playRegalGoldChime,
   getDynamicCollections, saveDynamicCollections,
   getDynamicLookbook, saveDynamicLookbook,
   getWebPhoto, saveWebPhoto, deleteWebPhoto,
   saveSetting, getCachedSetting,
   uploadMediaAsset, updateMediaAssetMetadata, deleteMediaAsset, MediaAsset,
-  getStoredHeroBanners, saveHeroBanners, compressImageBeforeUpload, getCollectionViews, generateSitemapXmlContent
+  getStoredHeroBanners, saveHeroBanners, compressImageBeforeUpload, getCollectionViews, generateSitemapXmlContent,
+  wipeAllLeads, wipeAllAppointments, resetCoutureCatalog, resetLookbookGallery, resetHeroBanners
 } from '../utils';
 import { uploadToStorage, deleteFromStorage, auth, db, getCloudinaryConfig, handleFirestoreError, OperationType } from '../firebase';
 import { 
@@ -85,6 +86,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [prodFeatures, setProdFeatures] = useState('');
   const [prodImgFile, setProdImgFile] = useState<File | null>(null);
   const [prodVidFile, setProdVidFile] = useState<File | null>(null);
+  const [prodImgUrlText, setProdImgUrlText] = useState('');
+  const [prodVidUrlText, setProdVidUrlText] = useState('');
   
   // Advanced Collections extensions
   const [prodImagesText, setProdImagesText] = useState('');
@@ -232,6 +235,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [lkCredits, setLkCredits] = useState('');
   const [lkImgFile, setLkImgFile] = useState<File | null>(null);
   const [lkVidFile, setLkVidFile] = useState<File | null>(null);
+  const [lkImgUrlText, setLkImgUrlText] = useState('');
+  const [lkVidUrlText, setLkVidUrlText] = useState('');
 
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
@@ -261,6 +266,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setProdFeatures(prod.features ? prod.features.join('. ') : '');
     setProdImgFile(null);
     setProdVidFile(null);
+    setProdImgUrlText(prod.imageUrl);
+    setProdVidUrlText(prod.videoUrl || '');
     setProdImagesText(prod.images ? prod.images.join(', ') : '');
     setProdFeatured(!!prod.featured);
     setFormError('');
@@ -280,6 +287,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setProdFeatures('Available in customized navy, midnight velvet, emerald green shading');
     setProdImgFile(null);
     setProdVidFile(null);
+    setProdImgUrlText('');
+    setProdVidUrlText('');
     setProdImagesText('');
     setProdFeatured(false);
     setFormError('');
@@ -296,6 +305,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setLkCredits(lk.credits);
     setLkImgFile(null);
     setLkVidFile(null);
+    setLkImgUrlText(lk.imageUrl);
+    setLkVidUrlText(lk.videoUrl || '');
     setFormError('');
     setFormSuccess('');
   };
@@ -310,6 +321,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setLkCredits('Featured Groom: custom wedding look');
     setLkImgFile(null);
     setLkVidFile(null);
+    setLkImgUrlText('');
+    setLkVidUrlText('');
     setFormError('');
     setFormSuccess('');
   };
@@ -335,8 +348,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setIsSavingProduct(true);
 
     try {
-      let finalImgUrl = editingProduct ? editingProduct.imageUrl : 'https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=800';
-      let finalVidUrl = editingProduct ? editingProduct.videoUrl || '' : '';
+      let finalImgUrl = prodImgUrlText.trim() || (editingProduct ? editingProduct.imageUrl : 'https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=800');
+      let finalVidUrl = prodVidUrlText.trim() || (editingProduct ? editingProduct.videoUrl || '' : '');
 
       const targetId = editingProduct ? editingProduct.id : `prod-${Date.now()}`;
 
@@ -467,8 +480,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
     try {
       const targetId = editingLookbook ? editingLookbook.id : `look-${Date.now()}`;
-      let finalImgUrl = editingLookbook ? editingLookbook.imageUrl : 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
-      let finalVidUrl = editingLookbook ? editingLookbook.videoUrl || '' : '';
+      let finalImgUrl = lkImgUrlText.trim() || (editingLookbook ? editingLookbook.imageUrl : 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800');
+      let finalVidUrl = lkVidUrlText.trim() || (editingLookbook ? editingLookbook.videoUrl || '' : '');
 
       if (lkImgFile) {
         try {
@@ -618,44 +631,44 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [lkVidPreview, setLkVidPreview] = useState<string>('');
 
   useEffect(() => {
-    if (!prodImgFile) {
-      setProdImgPreview('');
-      return;
+    if (prodImgFile) {
+      const url = URL.createObjectURL(prodImgFile);
+      setProdImgPreview(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setProdImgPreview(prodImgUrlText);
     }
-    const url = URL.createObjectURL(prodImgFile);
-    setProdImgPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [prodImgFile]);
+  }, [prodImgFile, prodImgUrlText]);
 
   useEffect(() => {
-    if (!prodVidFile) {
-      setProdVidPreview('');
-      return;
+    if (prodVidFile) {
+      const url = URL.createObjectURL(prodVidFile);
+      setProdVidPreview(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setProdVidPreview(prodVidUrlText);
     }
-    const url = URL.createObjectURL(prodVidFile);
-    setProdVidPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [prodVidFile]);
+  }, [prodVidFile, prodVidUrlText]);
 
   useEffect(() => {
-    if (!lkImgFile) {
-      setLkImgPreview('');
-      return;
+    if (lkImgFile) {
+      const url = URL.createObjectURL(lkImgFile);
+      setLkImgPreview(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setLkImgPreview(lkImgUrlText);
     }
-    const url = URL.createObjectURL(lkImgFile);
-    setLkImgPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [lkImgFile]);
+  }, [lkImgFile, lkImgUrlText]);
 
   useEffect(() => {
-    if (!lkVidFile) {
-      setLkVidPreview('');
-      return;
+    if (lkVidFile) {
+      const url = URL.createObjectURL(lkVidFile);
+      setLkVidPreview(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setLkVidPreview(lkVidUrlText);
     }
-    const url = URL.createObjectURL(lkVidFile);
-    setLkVidPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [lkVidFile]);
+  }, [lkVidFile, lkVidUrlText]);
 
   // Sound and Animation Settings
   const [soundEffectsDisabled, setSoundEffectsDisabled] = useState<boolean>(() => {
@@ -774,25 +787,20 @@ export default function AdminCRM({ onClose }: CRMProps) {
     const unsubscribeStaticPhotos = onSnapshot(collection(db, 'static_photos'), (snapshot) => {
       console.log('[Firestore] static_photos snapshot updates received. Items count:', snapshot.size);
       
-      // Default configurations or cache fallbacks for backward compatibility
-      const cacheHero0 = getCachedSetting('web_photos', 'web_photo_hero_0', '');
-      const cacheHero1 = getCachedSetting('web_photos', 'web_photo_hero_1', '');
-      const cacheHero2 = getCachedSetting('web_photos', 'web_photo_hero_2', '');
-      const cacheLegacy = getCachedSetting('web_photos', 'web_photo_legacy', '');
+      let hero0 = 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600';
+      let hero1 = 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600';
+      let hero2 = 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600';
+      let legacy = 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=1200';
 
-      let hero0 = cacheHero0 || 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600';
-      let hero1 = cacheHero1 || 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600';
-      let hero2 = cacheHero2 || 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600';
-      let legacy = cacheLegacy || 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=1200';
+      let has0 = false;
+      let has1 = false;
+      let has2 = false;
+      let hasLegacy = false;
 
-      let has0 = !!cacheHero0;
-      let has1 = !!cacheHero1;
-      let has2 = !!cacheHero2;
-      let hasLegacy = !!cacheLegacy;
-
-      const itemsList: any[] = [];
+      const itemsList: StaticPhoto[] = [];
       snapshot.forEach(docSnap => {
-        itemsList.push({ id: docSnap.id, ...docSnap.data() });
+        const docData = docSnap.data() as Omit<StaticPhoto, 'id'>;
+        itemsList.push({ id: docSnap.id as StaticPhotoKey, ...docData });
       });
 
       // Sort by latest upload timestamp descending
@@ -886,7 +894,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
     };
   }, []);
 
-  const handlePhotoUpload = async (key: string, file: File) => {
+  const handlePhotoUpload = async (key: StaticPhotoKey, file: File) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       showCustomAlert('Unsupported File', 'Only image files (JPEG, PNG, WEBP) are supported!');
@@ -902,15 +910,21 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
   };
 
-  const handlePhotoClear = async (key: string) => {
-    try {
-      await deleteWebPhoto(key);
-      setRefreshCounter(prev => prev + 1);
-      setMediaUploadSuccess(`Photo reverted to original default branding.`);
-      playRegalGoldChime();
-    } catch (e) {
-      console.error('Error clearing image:', e);
-    }
+  const handlePhotoClear = async (key: StaticPhotoKey) => {
+    requestConfirm(
+      'Revert Static Photo',
+      'Are you sure you want to revert this custom uploaded static visual and restore the default curated design option?',
+      async () => {
+        try {
+          await deleteWebPhoto(key);
+          setRefreshCounter(prev => prev + 1);
+          setMediaUploadSuccess(`Photo successfully reverted to default branding.`);
+          playRegalGoldChime();
+        } catch (e) {
+          console.error('Error clearing image:', e);
+        }
+      }
+    );
   };
 
   const handleToggleSoundEffects = async (checked: boolean) => {
@@ -1131,28 +1145,35 @@ export default function AdminCRM({ onClose }: CRMProps) {
   };
 
   const handleClearMedia = async () => {
-    try {
-      const videoUrlToDelete = adminVideoUrl;
-      await saveSetting('brand', { brand_logo_video: "" });
-      try {
-        if (videoUrlToDelete) {
-          await deleteFromStorage(videoUrlToDelete);
-        } else {
-          await deleteFromStorage('videos/brand_logo_video');
-        }
-      } catch (_) {}
-      
-      if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
+    requestConfirm(
+      'Remove Custom Cinematic Intro Video',
+      'Are you sure you want to permanently delete your custom brand intro video and revert the welcome entry page to the original gold metallic CSS fallback shimmer?',
+      async () => {
         try {
-          URL.revokeObjectURL(adminVideoUrl);
-        } catch (_) {}
+          const videoUrlToDelete = adminVideoUrl;
+          await saveSetting('brand', { brand_logo_video: "" });
+          try {
+            if (videoUrlToDelete) {
+              await deleteFromStorage(videoUrlToDelete);
+            } else {
+              await deleteFromStorage('videos/brand_logo_video');
+            }
+          } catch (_) {}
+          
+          if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
+            try {
+              URL.revokeObjectURL(adminVideoUrl);
+            } catch (_) {}
+          }
+          setAdminVideoUrl(null);
+          setAdminVideoBlob(null);
+          setMediaUploadSuccess('Custom brand video cleared. The site will now revert to the beautiful gold particles CSS intro.');
+          playRegalGoldChime();
+        } catch (e) {
+          console.error('Failed to clear video:', e);
+        }
       }
-      setAdminVideoUrl(null);
-      setAdminVideoBlob(null);
-      setMediaUploadSuccess('Custom brand video cleared. The site will now revert to the beautiful gold particles CSS intro.');
-    } catch (e) {
-      console.error('Failed to clear video:', e);
-    }
+    );
   };
 
   // Load and subscribe to real-time events on same window
@@ -1296,6 +1317,135 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const handleApptStatusChange = (apptId: string, newStatus: Appointment['status']) => {
     const updated = updateAppointmentStatus(apptId, newStatus);
     setAppointments(updated);
+  };
+
+  const handleDeleteLead = (leadId: string, leadName: string) => {
+    requestConfirm(
+      'Delete Customer Lead',
+      `Are you sure you want to permanently delete the lead record for groom "${leadName}"? This action is irreversible.`,
+      () => {
+        const updated = deleteLead(leadId);
+        setLeads(updated);
+        playRegalGoldChime();
+      }
+    );
+  };
+
+  const handleDeleteAppointment = (apptId: string, clientName: string) => {
+    requestConfirm(
+      'Delete Appointment Booking',
+      `Are you sure you want to permanently delete the showroom booking for "${clientName}"? This action is irreversible.`,
+      () => {
+        const updated = deleteAppointment(apptId);
+        setAppointments(updated);
+        playRegalGoldChime();
+      }
+    );
+  };
+
+  const handleWipeLeads = () => {
+    requestConfirm(
+      'System Wipeout: Customer Leads',
+      'WARNING: This will permanently delete ALL customer lead records from Firestore and reset your client roster. This action is extremely dangerous and irreversible. Do you want to proceed?',
+      async () => {
+        try {
+          const empty = await wipeAllLeads();
+          setLeads(empty);
+          setMediaUploadSuccess('All recorded customer leads have been erased from the system database.');
+          playRegalGoldChime();
+        } catch (err: any) {
+          showCustomAlert('Wipe Failed', err?.message || 'Error occurred during deletion.');
+        }
+      }
+    );
+  };
+
+  const handleWipeAppointments = () => {
+    requestConfirm(
+      'System Wipeout: Showroom Bookings',
+      'WARNING: This will permanently delete ALL active showroom bookings & trials from Firestore. This action is irreversible. Do you want to proceed?',
+      async () => {
+        try {
+          const empty = await wipeAllAppointments();
+          setAppointments(empty);
+          setMediaUploadSuccess('All recorded showroom appointment slots have been erased.');
+          playRegalGoldChime();
+        } catch (err: any) {
+          showCustomAlert('Wipe Failed', err?.message || 'Error occurred during deletion.');
+        }
+      }
+    );
+  };
+
+  const handleResetCatalog = () => {
+    requestConfirm(
+      'System Reset: Couture Catalog',
+      'This will delete any custom uploaded blazers, sherwanis and indowesterns, and revert the main boutique registry to original curated designer defaults. Do you want to reset?',
+      async () => {
+        try {
+          const defaults = await resetCoutureCatalog();
+          setCollectionsList(defaults);
+          setMediaUploadSuccess('Catalog successfully reset to pristine designer master collections.');
+          playRegalGoldChime();
+        } catch (err: any) {
+          showCustomAlert('Reset Failed', err?.message || 'Error resetting catalog.');
+        }
+      }
+    );
+  };
+
+  const handleResetLookbook = () => {
+    requestConfirm(
+      'System Reset: Lookbook Portfolio',
+      'This will delete any custom lookbook slides and revert the groom lookbook portfolio masonry stream to default editorial layouts. Do you want to reset?',
+      async () => {
+        try {
+          const defaults = await resetLookbookGallery();
+          setLookbookList(defaults);
+          setMediaUploadSuccess('Lookbook gallery reverted successfully to original premium editorial shoots.');
+          playRegalGoldChime();
+        } catch (err: any) {
+          showCustomAlert('Reset Failed', err?.message || 'Error resetting lookbook.');
+        }
+      }
+    );
+  };
+
+  const handleResetBannersList = () => {
+    requestConfirm(
+      'System Reset: Hero Banners',
+      'This will clear any custom carousel promotional slides and restore the original homepage slide backdrops. Do you want to proceed?',
+      async () => {
+        try {
+          const defaults = await resetHeroBanners();
+          setBannersList(defaults);
+          setMediaUploadSuccess('Homepage hero carousel restored successfully to dynamic designer slides.');
+          playRegalGoldChime();
+        } catch (err: any) {
+          showCustomAlert('Reset Failed', err?.message || 'Error resetting carousel.');
+        }
+      }
+    );
+  };
+
+  const handleRevertAllCustomWebPhotos = () => {
+    requestConfirm(
+      'System Reset: Custom Web Photos',
+      'Are you sure you want to revert ALL custom static visual assets in the Web Static Photos Manager back to high-contrast fallback assets?',
+      async () => {
+        try {
+          const keys: StaticPhotoKey[] = ['web_photo_hero_0', 'web_photo_hero_1', 'web_photo_hero_2', 'web_photo_legacy'];
+          for (const key of keys) {
+            await deleteWebPhoto(key);
+          }
+          setRefreshCounter(prev => prev + 1);
+          setMediaUploadSuccess('All static images reverted back to original boutique fallback assets.');
+          playRegalGoldChime();
+        } catch (err: any) {
+          showCustomAlert('Reset Failed', 'Error reverting images: ' + err?.message);
+        }
+      }
+    );
   };
 
   const handleSaveAdminNote = (leadId: string, notesText: string) => {
@@ -1515,15 +1665,15 @@ export default function AdminCRM({ onClose }: CRMProps) {
       )}
 
       {/* CRM Dashboard Top Bar */}
-      <header className="bg-[#121212] border-b border-[#C5A85D]/20 px-6 h-20 shrink-0 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
+      <header className="bg-[#121212] border-b border-[#C5A85D]/20 px-6 py-4 xl:py-0 xl:h-24 shrink-0 flex flex-col xl:flex-row items-center justify-between gap-4">
+        <div className="flex items-center space-x-3 self-start xl:self-auto">
           <div className="w-10 h-10 bg-[#4A0E17] border border-[#C5A85D]/30 flex items-center justify-center rounded-full">
             <Sparkles className="w-5 h-5 text-[#C5A85D]" />
           </div>
           <div>
             <h1 className="font-display font-medium text-[#E5C46D] text-lg tracking-widest uppercase flex items-center space-x-1.5">
               <span>Varudu CRM</span>
-              <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 text-[8px] tracking-normal font-sans rounded">
+              <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 text-[8px] tracking-normal font-sans rounded animate-pulse">
                 ● Connected Live
               </span>
             </h1>
@@ -1533,14 +1683,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
           </div>
         </div>
 
-        {/* Dashboard Tabs Selector */}
-        <div className="flex items-center space-x-2 sm:space-x-3">
+        {/* Dashboard Tabs Selector & Actions - fully responsive wrap container */}
+        <div className="flex flex-wrap items-center justify-center xl:justify-end gap-2 sm:gap-3 w-full xl:w-auto">
           <button
             onClick={() => setCrmTab('leads')}
-            className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+            className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
               crmTab === 'leads'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
-                : 'bg-black text-gray-400 border-white/5 hover:text-white'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
             Leads Directory ({leads.length})
@@ -1548,10 +1698,10 @@ export default function AdminCRM({ onClose }: CRMProps) {
           
           <button
             onClick={() => setCrmTab('appointments')}
-            className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+            className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
               crmTab === 'appointments'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
-                : 'bg-black text-gray-400 border-white/5 hover:text-white'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
             Showroom Bookings ({appointments.length})
@@ -1559,10 +1709,10 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
           <button
             onClick={() => setCrmTab('analytics')}
-            className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+            className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
               crmTab === 'analytics'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
-                : 'bg-black text-gray-400 border-white/5 hover:text-white'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
             Revenue Analytics
@@ -1570,25 +1720,27 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
           <button
             onClick={() => setCrmTab('banners')}
-            className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+            className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
               crmTab === 'banners'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
-                : 'bg-black text-gray-400 border-white/5 hover:text-white'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
-            🎪 Hero Banners
+            🎪 Banners
           </button>
 
           <button
             onClick={() => setCrmTab('media')}
-            className={`px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+            className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
               crmTab === 'media'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
-                : 'bg-black text-gray-400 border-white/5 hover:text-white'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
-            🎬 Brand Cinema
+            🎬 Cinema
           </button>
+
+          <div className="h-4 w-[1px] bg-white/10 hidden sm:block mx-0.5" />
 
           {/* Sitemap SEO Gen */}
           <button
@@ -1608,30 +1760,31 @@ export default function AdminCRM({ onClose }: CRMProps) {
                 showCustomAlert('Sitemap Failed', 'Failed to compile XML draft: ' + err?.message);
               }
             }}
-            className="p-2 border border-white/5 hover:border-emerald-500 hover:text-emerald-400 rounded text-gray-500 transition-colors cursor-pointer flex items-center justify-center space-x-1"
+            className="p-2 border border-white/5 hover:border-emerald-500 hover:text-emerald-400 rounded text-gray-500 hover:text-white transition-colors cursor-pointer flex items-center justify-center space-x-1"
             title="Export Sitemap XML"
           >
             <Globe className="w-4 h-4 text-[#C5A85D]" />
-            <span className="text-[9px] uppercase tracking-wider font-bold hidden md:inline">SEO Sitemap</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold">SEO Sitemap</span>
           </button>
 
           {/* Logout button */}
           <button
             onClick={handleLogout}
-            className="p-2 border border-white/5 hover:border-amber-500 hover:text-[#C5A85D] rounded text-gray-500 transition-colors cursor-pointer flex items-center justify-center space-x-1"
+            className="p-2 border border-white/5 hover:border-amber-500 hover:text-[#C5A85D] rounded text-gray-500 hover:text-white transition-colors cursor-pointer flex items-center justify-center space-x-1"
             title="Log Out Security Session"
           >
-            <Shield className="w-4 h-4" />
-            <span className="text-[9px] uppercase tracking-wider font-bold hidden md:inline">Sign Out</span>
+            <Shield className="w-4 h-4 text-[#C5A85D]" />
+            <span className="text-[9px] uppercase tracking-wider font-bold">Sign Out</span>
           </button>
 
           {/* Close Panel Button */}
           <button
             onClick={onClose}
-            className="p-2 border border-white/10 hover:border-red-500 hover:text-red-500 rounded text-gray-400 transition-colors cursor-pointer"
+            className="px-3 py-2 border border-red-500/30 bg-red-950/10 hover:border-red-500 hover:text-red-400 rounded text-gray-400 transition-colors cursor-pointer flex items-center justify-center space-x-1 font-sans text-[10px] uppercase font-bold tracking-wider"
             title="Exit Admin CRM"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 text-red-500" />
+            <span>Close</span>
           </button>
         </div>
       </header>
@@ -2459,6 +2612,82 @@ export default function AdminCRM({ onClose }: CRMProps) {
                     </button>
                   </form>
                 </div>
+
+                {/* Panel 5: Master Deletion & Purge Settings */}
+                <div className="bg-[#0D0D0D] p-5 rounded-lg border border-red-500/10 hover:border-red-500/30 flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-2 mt-4 space-y-4">
+                  <div>
+                    <div className="flex items-center space-x-2 border-b border-red-500/20 pb-2.5 mb-2">
+                      <AlertOctagon className="w-4.5 h-4.5 text-red-500" />
+                      <h4 className="text-white text-xs font-sans font-bold uppercase tracking-widest">Critical Master Deletion & Reset Settings</h4>
+                    </div>
+                    <p className="text-gray-400 text-[11px] leading-relaxed">
+                      Wipe dynamic data tables, purge administrative records, or revert bespoke catalogs and visual components to original curated designer fallbacks. **WARNING**: All deletions are absolute and synced in real-time across high-performance databases.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                    {/* Wipe Leads */}
+                    <button
+                      onClick={handleWipeLeads}
+                      className="p-3 bg-red-950/20 border border-red-500/10 hover:border-red-500/40 text-red-400 hover:text-white rounded hover:bg-red-950/40 transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-1.5"
+                    >
+                      <Trash2 className="w-5 h-5 text-red-500" />
+                      <span className="text-[10px] font-sans font-bold uppercase tracking-wider">Wipe All Leads</span>
+                      <span className="text-[8px] text-gray-500 font-sans leading-normal">Delete all client inquiries</span>
+                    </button>
+
+                    {/* Wipe Appointments */}
+                    <button
+                      onClick={handleWipeAppointments}
+                      className="p-3 bg-red-950/20 border border-red-500/10 hover:border-red-500/40 text-red-400 hover:text-white rounded hover:bg-red-950/40 transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-1.5"
+                    >
+                      <Calendar className="w-5 h-5 text-red-500" />
+                      <span className="text-[10px] font-sans font-bold uppercase tracking-wider">Wipe Bookings</span>
+                      <span className="text-[8px] text-gray-500 font-sans leading-normal">Delete active slot bookings</span>
+                    </button>
+
+                    {/* Reset Catalog */}
+                    <button
+                      onClick={handleResetCatalog}
+                      className="p-3 bg-amber-950/10 border border-amber-500/10 hover:border-amber-500/40 text-[#E5C46D] hover:text-white rounded hover:bg-amber-950/25 transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-1.5"
+                    >
+                      <Layers className="w-5 h-5 text-[#C5A85D]" />
+                      <span className="text-[10px] font-sans font-bold uppercase tracking-wider">Reset Couture Catalog</span>
+                      <span className="text-[8px] text-gray-500 font-sans leading-normal">Revert to default products</span>
+                    </button>
+
+                    {/* Reset Lookbook */}
+                    <button
+                      onClick={handleResetLookbook}
+                      className="p-3 bg-amber-950/10 border border-amber-500/10 hover:border-amber-500/40 text-[#E5C46D] hover:text-white rounded hover:bg-amber-950/25 transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-1.5"
+                    >
+                      <Scissors className="w-5 h-5 text-[#C5A85D]" />
+                      <span className="text-[10px] font-sans font-bold uppercase tracking-wider">Reset Lookbook Gallery</span>
+                      <span className="text-[8px] text-gray-500 font-sans leading-normal">Restore original editorial shots</span>
+                    </button>
+
+                    {/* Reset Hero Banners */}
+                    <button
+                      onClick={handleResetBannersList}
+                      className="p-3 bg-amber-950/10 border border-amber-500/10 hover:border-amber-500/40 text-[#E5C46D] hover:text-white rounded hover:bg-amber-950/25 transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-1.5"
+                    >
+                      <Sparkles className="w-5 h-5 text-[#C5A85D]" />
+                      <span className="text-[10px] font-sans font-bold uppercase tracking-wider">Reset Hero Banners</span>
+                      <span className="text-[8px] text-gray-500 font-sans leading-normal">Restore original slide carousel</span>
+                    </button>
+
+                    {/* Reset Custom Static Photos */}
+                    <button
+                      onClick={handleRevertAllCustomWebPhotos}
+                      className="p-3 bg-amber-950/10 border border-amber-500/10 hover:border-amber-500/40 text-[#E5C46D] hover:text-white rounded hover:bg-amber-950/25 transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-1.5"
+                    >
+                      <Upload className="w-5 h-5 text-[#C5A85D]" />
+                      <span className="text-[10px] font-sans font-bold uppercase tracking-wider">Revert Custom Photos</span>
+                      <span className="text-[8px] text-gray-500 font-sans leading-normal">Return all 4 static visuals to original</span>
+                    </button>
+                  </div>
+                </div>
+
               </div>
             </div>
 
@@ -2922,6 +3151,18 @@ export default function AdminCRM({ onClose }: CRMProps) {
                                 hover:file:bg-[#E5C46D] file:cursor-pointer"
                             />
                             {prodImgFile && <p className="text-[10px] text-amber-200 mt-1">✓ Loaded: {prodImgFile.name}</p>}
+                            <div className="mt-2 pt-2 border-t border-white/5">
+                              <span className="text-[9px] uppercase tracking-widest text-gray-400 block mb-1">
+                                Or Paste Product Photo URL
+                              </span>
+                              <input 
+                                type="text"
+                                value={prodImgUrlText}
+                                onChange={(e) => setProdImgUrlText(e.target.value)}
+                                placeholder="Paste image link manually (e.g. Unsplash / CDN)"
+                                className="w-full bg-black border border-white/10 text-white p-2 text-xs rounded focus:outline-none focus:border-[#C5A85D]"
+                              />
+                            </div>
                           </div>
 
                           <div>
@@ -2942,6 +3183,18 @@ export default function AdminCRM({ onClose }: CRMProps) {
                                 hover:file:bg-[#E5C46D] file:cursor-pointer"
                             />
                             {prodVidFile && <p className="text-[10px] text-emerald-300 mt-1">✓ Loaded: {prodVidFile.name}</p>}
+                            <div className="mt-2 pt-2 border-t border-white/5">
+                              <span className="text-[9px] uppercase tracking-widest text-gray-400 block mb-1">
+                                Or Paste Video Reel URL
+                              </span>
+                              <input 
+                                type="text"
+                                value={prodVidUrlText}
+                                onChange={(e) => setProdVidUrlText(e.target.value)}
+                                placeholder="Paste video link manually (e.g. MP4, WebM)"
+                                className="w-full bg-black border border-white/10 text-white p-2 text-xs rounded focus:outline-none focus:border-[#C5A85D]"
+                              />
+                            </div>
                           </div>
                         </div>
 
@@ -3159,6 +3412,18 @@ export default function AdminCRM({ onClose }: CRMProps) {
                                 hover:file:bg-[#E5C46D] file:cursor-pointer"
                             />
                             {lkImgFile && <p className="text-[10px] text-amber-200 mt-1">✓ Loaded: {lkImgFile.name}</p>}
+                            <div className="mt-2 pt-2 border-t border-white/5">
+                              <span className="text-[9px] uppercase tracking-widest text-gray-400 block mb-1">
+                                Or Paste Editorial Photo URL
+                              </span>
+                              <input 
+                                type="text"
+                                value={lkImgUrlText}
+                                onChange={(e) => setLkImgUrlText(e.target.value)}
+                                placeholder="Paste lookbook image URL"
+                                className="w-full bg-black border border-white/10 text-white p-2 text-xs rounded focus:outline-none focus:border-[#C5A85D]"
+                              />
+                            </div>
                           </div>
 
                           <div>
@@ -3179,6 +3444,18 @@ export default function AdminCRM({ onClose }: CRMProps) {
                                 hover:file:bg-[#E5C46D] file:cursor-pointer"
                             />
                             {lkVidFile && <p className="text-[10px] text-emerald-300 mt-1">✓ Loaded: {lkVidFile.name}</p>}
+                            <div className="mt-2 pt-2 border-t border-white/5">
+                              <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] block mb-1">
+                                Or Paste Cinematic Loop Video URL
+                              </span>
+                              <input 
+                                type="text"
+                                value={lkVidUrlText}
+                                onChange={(e) => setLkVidUrlText(e.target.value)}
+                                placeholder="Paste loop video URL"
+                                className="w-full bg-black border border-white/10 text-white p-2 text-xs rounded focus:outline-none focus:border-[#C5A85D]"
+                              />
+                            </div>
                           </div>
                         </div>
 
@@ -3759,30 +4036,40 @@ export default function AdminCRM({ onClose }: CRMProps) {
                       </div>
 
                       {/* Speed Communications Links */}
-                      <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
-                        
-                        {/* Instant Call */}
-                        <a
-                          href={`tel:${lead.phone.replace(/\s+/g, '')}`}
-                          className="flex items-center justify-center p-2.5 bg-zinc-800 hover:bg-zinc-700 text-[#C5A85D] rounded border border-white/5 shadow text-xs font-sans font-medium uppercase tracking-wider"
-                          title="Call Client instantly"
-                        >
-                          <Phone className="w-4 h-4 mr-1 text-[#E5C46D]" />
-                          <span>Call Shop</span>
-                        </a>
+                      <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <div className="grid grid-cols-2 gap-2 flex-1 sm:flex-none">
+                          {/* Instant Call */}
+                          <a
+                            href={`tel:${lead.phone.replace(/\s+/g, '')}`}
+                            className="flex items-center justify-center p-2.5 bg-zinc-800 hover:bg-zinc-700 text-[#C5A85D] rounded border border-white/5 shadow text-xs font-sans font-medium uppercase tracking-wider"
+                            title="Call Client instantly"
+                          >
+                            <Phone className="w-4 h-4 mr-1 text-[#E5C46D]" />
+                            <span>Call</span>
+                          </a>
 
-                        {/* Format follow-up WhatsApp message */}
-                        <a
-                          href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${lead.name}! I am contacting you on behalf of Chief Stylist team from VARUDU ETHNIC STUDIO regarding your elite Groom Bridal Sherwani booking for your wedding on ${lead.weddingDate}. We would love to finalize your measurement swatches. Shall we block a private trial this weekend?`)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-center p-2.5 bg-emerald-600/10 hover:bg-emerald-600 hover:text-white text-emerald-400 rounded border border-emerald-500/20 text-xs font-sans font-medium uppercase tracking-wider"
-                          title="Draft WhatsApp dialogue"
-                        >
-                          <MessageSquare className="w-4 h-4 mr-1" />
-                          <span>WhatsApp</span>
-                        </a>
+                          {/* Format follow-up WhatsApp message */}
+                          <a
+                            href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${lead.name}! I am contacting you on behalf of Chief Stylist team from VARUDU ETHNIC STUDIO regarding your elite Groom Bridal Sherwani booking for your wedding on ${lead.weddingDate}. We would love to finalize your measurement swatches. Shall we block a private trial this weekend?`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center p-2.5 bg-emerald-600/10 hover:bg-emerald-600 hover:text-white text-emerald-400 rounded border border-emerald-500/20 text-xs font-sans font-medium uppercase tracking-wider"
+                            title="Draft WhatsApp dialogue"
+                          >
+                            <MessageSquare className="w-4 h-4 mr-1" />
+                            <span>WhatsApp</span>
+                          </a>
+                        </div>
 
+                        {/* Remove / Delete Lead */}
+                        <button
+                          onClick={() => handleDeleteLead(lead.id, lead.name)}
+                          className="flex items-center justify-center p-2.5 bg-red-950/20 hover:bg-red-900 border border-red-500/20 hover:border-red-500 text-red-400 hover:text-white rounded text-xs font-sans font-medium uppercase tracking-wider transition-all cursor-pointer"
+                          title="Delete Lead Record"
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          <span>Delete</span>
+                        </button>
                       </div>
 
                     </div>
@@ -4064,6 +4351,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
                         >
                           <Phone className="w-4 h-4" />
                         </a>
+
+                        <button
+                          onClick={() => handleDeleteAppointment(appt.id, appt.customerName)}
+                          className="p-2.5 bg-red-950/20 text-red-400 border border-red-500/20 hover:border-red-500 hover:bg-red-900 hover:text-white rounded transition-colors cursor-pointer flex items-center justify-center"
+                          title="Delete Appointment"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
 
                       </div>
 

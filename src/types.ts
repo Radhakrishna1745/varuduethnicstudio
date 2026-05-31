@@ -104,3 +104,12 @@ export interface LookbookItem {
   description: string;
   credits: string;
 }
+
+export type StaticPhotoKey = 'web_photo_hero_0' | 'web_photo_hero_1' | 'web_photo_hero_2' | 'web_photo_legacy';
+
+export interface StaticPhoto {
+  id: StaticPhotoKey;
+  url: string;
+  timestamp: number;
+  updatedAt: string;
+}

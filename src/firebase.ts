@@ -1,7 +1,34 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer, getDoc } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+// @ts-ignore
+import firebaseConfigRaw from '../firebase-applet-config.json?raw';
+
+// Safe parse of the Firebase configuration to survive empty/missing config during deployments
+let firebaseConfig: any = {
+  projectId: "elemental-path-81b2m",
+  appId: "1:333821311032:web:04444588efbdd955ce0ecd",
+  apiKey: "AIzaSyB3U1b_-EcWrruxNJB8DFjT-o_PLkzD2Og",
+  authDomain: "elemental-path-81b2m.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-92e15d51-850b-4ef4-9643-bba73e28c56d",
+  storageBucket: "elemental-path-81b2m.firebasestorage.app",
+  messagingSenderId: "333821311032",
+  measurementId: ""
+};
+
+try {
+  if (firebaseConfigRaw && firebaseConfigRaw.trim()) {
+    const parsed = JSON.parse(firebaseConfigRaw);
+    if (parsed && typeof parsed === 'object') {
+      firebaseConfig = {
+        ...firebaseConfig,
+        ...parsed
+      };
+    }
+  }
+} catch (e) {
+  console.warn("Could not parse firebase-applet-config.json raw string safely. Using fallback placeholders.", e);
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CustomerLead, Appointment, ProductCollection, LookbookItem } from './types';
+import { CustomerLead, Appointment, ProductCollection, LookbookItem, StaticPhoto, StaticPhotoKey } from './types';
 import { COLLECTIONS, LOOKBOOK_GALLERY } from './data';
 import { collection, doc, setDoc, updateDoc, onSnapshot, getDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, uploadToStorage, deleteFromStorage, parseCloudinaryUrlOrPath } from './firebase';
@@ -213,6 +213,34 @@ export const updateAppointmentStatus = (id: string, status: Appointment['status'
   return updated;
 };
 
+export const deleteLead = (id: string): CustomerLead[] => {
+  const leads = getStoredLeads();
+  const updated = leads.filter(l => l.id !== id);
+  _leadsInMemory = updated;
+
+  // Sync delete to Firebase
+  deleteDoc(doc(db, 'leads', id)).catch(error => {
+    handleFirestoreError(error, OperationType.DELETE, `leads/${id}`);
+  });
+
+  window.dispatchEvent(new CustomEvent('varudu-lead-updated'));
+  return updated;
+};
+
+export const deleteAppointment = (id: string): Appointment[] => {
+  const appts = getStoredAppointments();
+  const updated = appts.filter(a => a.id !== id);
+  _appointmentsInMemory = updated;
+
+  // Sync delete to Firebase
+  deleteDoc(doc(db, 'appointments', id)).catch(error => {
+    handleFirestoreError(error, OperationType.DELETE, `appointments/${id}`);
+  });
+
+  window.dispatchEvent(new CustomEvent('varudu-appointment-updated'));
+  return updated;
+};
+
 // Start a live sync listener to receive real-time updates from Firebase
 export const startLiveSync = () => {
   if (typeof window === 'undefined') return () => {};
@@ -250,17 +278,15 @@ export const startLiveSync = () => {
   });
 
   const unsubscribeSettings = onSnapshot(collection(db, 'settings'), (snapshot) => {
-    const settings: Record<string, any> = {};
     snapshot.forEach(docSnap => {
-      settings[docSnap.id] = docSnap.data();
+      _settingsInMemory[docSnap.id] = docSnap.data();
     });
-    _settingsInMemory = settings;
-    window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: settings }));
-    if (settings.collections && Array.isArray(settings.collections.list)) {
-      window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: settings.collections.list }));
+    window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: _settingsInMemory }));
+    if (_settingsInMemory.collections && Array.isArray(_settingsInMemory.collections.list)) {
+      window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: _settingsInMemory.collections.list }));
     }
-    if (settings.lookbook && Array.isArray(settings.lookbook.list)) {
-      window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: settings.lookbook.list }));
+    if (_settingsInMemory.lookbook && Array.isArray(_settingsInMemory.lookbook.list)) {
+      window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: _settingsInMemory.lookbook.list }));
     }
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
@@ -283,12 +309,10 @@ export const startLiveSync = () => {
   });
 
   const unsubscribeStaticPhotos = onSnapshot(collection(db, 'static_photos'), (snapshot) => {
+    _settingsInMemory['web_photos'] = {};
     snapshot.forEach(docSnap => {
-      const data = docSnap.data();
+      const data = docSnap.data() as Partial<StaticPhoto>;
       if (data && data.url) {
-        if (!_settingsInMemory['web_photos']) {
-          _settingsInMemory['web_photos'] = {};
-        }
         _settingsInMemory['web_photos'][docSnap.id] = data.url;
       }
     });
@@ -651,6 +675,25 @@ export const getCachedSetting = (docId: string, field: string, defaultValue: str
   return defaultValue;
 };
 
+// Helper function to remove undefined values recursively so Firestore setDoc does not throw errors
+export const cleanFirestoreData = (val: any): any => {
+  if (val === undefined) return null;
+  if (val === null) return val;
+  if (Array.isArray(val)) {
+    return val.map(cleanFirestoreData);
+  }
+  if (typeof val === 'object') {
+    const res: any = {};
+    for (const key of Object.keys(val)) {
+      if (val[key] !== undefined) {
+        res[key] = cleanFirestoreData(val[key]);
+      }
+    }
+    return res;
+  }
+  return val;
+};
+
 export const saveSetting = async (docId: string, data: Record<string, any>) => {
   try {
     _settingsInMemory[docId] = { ...(_settingsInMemory[docId] || {}), ...data };
@@ -664,18 +707,20 @@ export const saveSetting = async (docId: string, data: Record<string, any>) => {
       window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: data.list }));
     }
 
-    await setDoc(doc(db, 'settings', docId), data, { merge: true });
+    // Sanitize any undefined elements recursively to protect setDoc
+    const cleaned = cleanFirestoreData(data);
+    await setDoc(doc(db, 'settings', docId), cleaned, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `settings/${docId}`);
   }
 };
 
 // --- DYNAMIC WEB PHOTO CUSTOMIZER UTILITIES ---
-export const getWebPhoto = async (key: string, defaultUrl: string): Promise<string> => {
+export const getWebPhoto = async (key: StaticPhotoKey, defaultUrl: string): Promise<string> => {
   try {
     const docSnap = await getDoc(doc(db, 'static_photos', key));
     if (docSnap.exists()) {
-      const data = docSnap.data();
+      const data = docSnap.data() as Partial<StaticPhoto>;
       if (data && data.url) {
         return data.url;
       }
@@ -689,7 +734,7 @@ export const getWebPhoto = async (key: string, defaultUrl: string): Promise<stri
   return defaultUrl;
 };
 
-export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
+export const saveWebPhoto = async (key: StaticPhotoKey, file: Blob): Promise<void> => {
   try {
     const path = `hero-banners/${key}`;
     let downloadUrl = '';
@@ -706,12 +751,12 @@ export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
     }
     
     // Save record to Firestore collection 'static_photos'
-    await setDoc(doc(db, 'static_photos', key), {
+    await setDoc(doc(db, 'static_photos', key), cleanFirestoreData({
       id: key,
       url: downloadUrl,
       timestamp: Date.now(),
       updatedAt: new Date().toISOString()
-    });
+    }));
 
     console.log(`[StaticPhotos] Upload success for static photo [${key}]: ${downloadUrl}`);
     
@@ -726,7 +771,7 @@ export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
   }
 };
 
-export const deleteWebPhoto = async (key: string): Promise<void> => {
+export const deleteWebPhoto = async (key: StaticPhotoKey): Promise<void> => {
   try {
     // Delete record from Firestore collection 'static_photos'
     await deleteDoc(doc(db, 'static_photos', key));
@@ -883,3 +928,89 @@ export const deleteMediaAsset = async (mediaId: string, fileUrl: string, categor
     console.error('Failed to complete delete asset flow:', error);
   }
 };
+
+/**
+ * Wipe all customer lead records from local cache and cloud DB.
+ */
+export const wipeAllLeads = async (): Promise<CustomerLead[]> => {
+  _leadsInMemory = [];
+  try {
+    const qSnapshot = await getDocs(collection(db, 'leads'));
+    const deletePromises = qSnapshot.docs.map(d => deleteDoc(doc(db, 'leads', d.id)));
+    await Promise.all(deletePromises);
+  } catch (err) {
+    console.warn('Wipe leads background Firestore task:', err);
+  }
+  window.dispatchEvent(new CustomEvent('varudu-lead-updated'));
+  return [];
+};
+
+/**
+ * Wipe all showroom appointment slots/bookings from local cache and cloud DB.
+ */
+export const wipeAllAppointments = async (): Promise<Appointment[]> => {
+  _appointmentsInMemory = [];
+  try {
+    const qSnapshot = await getDocs(collection(db, 'appointments'));
+    const deletePromises = qSnapshot.docs.map(d => deleteDoc(doc(db, 'appointments', d.id)));
+    await Promise.all(deletePromises);
+  } catch (err) {
+    console.warn('Wipe appointments background Firestore task:', err);
+  }
+  window.dispatchEvent(new CustomEvent('varudu-appointment-updated'));
+  return [];
+};
+
+/**
+ * Reset Couture Custom Catalog to original curated default items.
+ */
+export const resetCoutureCatalog = async (): Promise<ProductCollection[]> => {
+  saveDynamicCollections(COLLECTIONS);
+  return COLLECTIONS;
+};
+
+/**
+ * Reset Groom Lookbook gallery to luxury curated defaults.
+ */
+export const resetLookbookGallery = async (): Promise<LookbookItem[]> => {
+  saveDynamicLookbook(LOOKBOOK_GALLERY as LookbookItem[]);
+  return LOOKBOOK_GALLERY as LookbookItem[];
+};
+
+/**
+ * Reset Carousel slides back to pristine designer defaults.
+ */
+export const resetHeroBanners = async (): Promise<HeroBanner[]> => {
+  const DEFAULT_BANNERS: HeroBanner[] = [
+    {
+      id: 'banner-0',
+      imageUrl: 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600',
+      title: 'Where Royal Weddings Begin',
+      subtitle: 'INDIAS PREMIER GROOM COUTURE STUDIO',
+      description: 'Step into a world of timeless majesty. Handcrafted sherwanis tailored meticulously by generational master craftsmen to make your entry truly legendary.',
+      enabled: true,
+      order: 0
+    },
+    {
+      id: 'banner-1',
+      imageUrl: 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600',
+      title: 'Crafting the Groom of Your Dreams',
+      subtitle: 'EXCLUSIVE BRIDAL SHERWANIS',
+      description: 'Zardozi wire-work woven with real gold threads, semi-precious stone embellishments, and rich handspun silk drapes styled specifically for the elite groom.',
+      enabled: true,
+      order: 1
+    },
+    {
+      id: 'banner-2',
+      imageUrl: 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600',
+      title: 'India’s Premium Groom Fashion Destination',
+      subtitle: 'THE MODERN RAJPUTANA CHIC',
+      description: 'Explore state-of-the-art Indo-western structures, velvet Nawabi Peshawari sets, and sharp Italian Wool-mix bundis crafted strictly for high-converting celebrations.',
+      enabled: true,
+      order: 2
+    }
+  ];
+  await saveHeroBanners(DEFAULT_BANNERS);
+  return DEFAULT_BANNERS;
+};
+

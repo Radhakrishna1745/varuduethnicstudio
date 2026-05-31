@@ -17,10 +17,14 @@ export default function ExitIntentPopup({ onTriggerBook }: ExitIntentProps) {
   useEffect(() => {
     // Check session safety
     if (typeof window === 'undefined') return;
-    const dismissed = sessionStorage.getItem('varudu_has_seen_exit');
-    if (dismissed) {
-      setHasShown(true);
-      return;
+    try {
+      const dismissed = sessionStorage.getItem('varudu_has_seen_exit');
+      if (dismissed) {
+        setHasShown(true);
+        return;
+      }
+    } catch (err) {
+      console.warn('Session storage reading blocked by browser settings inside sandboxed iframe:', err);
     }
 
     const handleMouseLeave = (e: MouseEvent) => {
@@ -28,7 +32,11 @@ export default function ExitIntentPopup({ onTriggerBook }: ExitIntentProps) {
       if (e.clientY < 15 && !hasShown) {
         setIsOpen(true);
         setHasShown(true);
-        sessionStorage.setItem('varudu_has_seen_exit', 'true');
+        try {
+          sessionStorage.setItem('varudu_has_seen_exit', 'true');
+        } catch (err) {
+          console.warn('Session storage writing blocked by browser:', err);
+        }
       }
     };
 

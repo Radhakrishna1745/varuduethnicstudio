@@ -41,8 +41,13 @@ export default function App() {
   // Cinema Logo Splash Screen Intro State
   const [showSplash, setShowSplash] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      const stored = sessionStorage.getItem('varudu_splash_played');
-      return !stored;
+      try {
+        const stored = sessionStorage.getItem('varudu_splash_played');
+        return !stored;
+      } catch (err) {
+        console.warn('Session storage is blocked or loaded inside sandboxed iframe without permissions:', err);
+        return true;
+      }
     }
     return true;
   });
@@ -50,7 +55,11 @@ export default function App() {
   const handleSplashComplete = () => {
     setShowSplash(false);
     if (typeof window !== 'undefined') {
-      sessionStorage.setItem('varudu_splash_played', 'true');
+      try {
+        sessionStorage.setItem('varudu_splash_played', 'true');
+      } catch (err) {
+        console.warn('Could not save splash played flag to session storage:', err);
+      }
     }
   };
 
