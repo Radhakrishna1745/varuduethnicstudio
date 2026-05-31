@@ -8,6 +8,8 @@ import { Compass, Sparkles, X, ChevronLeft, ChevronRight, MessageSquare } from '
 import { getDynamicLookbook } from '../utils';
 import { IndexedAsset } from './FeaturedCollections';
 import { LookbookItem } from '../types';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { onSnapshot, doc } from 'firebase/firestore';
 
 export default function GroomLookbook() {
   const [activeCategory, setActiveCategory] = useState('All');
@@ -15,13 +17,18 @@ export default function GroomLookbook() {
   const [lookbookItems, setLookbookItems] = useState<LookbookItem[]>(() => getDynamicLookbook());
 
   useEffect(() => {
-    const handleUpdate = () => {
-      setLookbookItems(getDynamicLookbook());
-    };
-    window.addEventListener('varudu-lookbook-updated', handleUpdate);
-    return () => {
-      window.removeEventListener('varudu-lookbook-updated', handleUpdate);
-    };
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'lookbook'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.list)) {
+          setLookbookItems(data.list as LookbookItem[]);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/lookbook');
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const categories = ['All', 'Sherwani', 'Indo-Western', 'Kurta-Pajama', 'Groom-Accessories'];

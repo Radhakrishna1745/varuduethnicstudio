@@ -5,8 +5,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Calendar, Upload, MessageSquare, MapPin, Sparkles, Shield, Trophy, Ruler } from 'lucide-react';
-import { getScheduledHeroBanners } from '../utils';
+import { getScheduledHeroBanners, isBannerActive } from '../utils';
 import { HeroBanner } from '../types';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { onSnapshot, doc } from 'firebase/firestore';
 
 interface HeroProps {
   onNavigate: (viewId: string) => void;
@@ -16,15 +18,21 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [banners, setBanners] = useState<HeroBanner[]>(() => getScheduledHeroBanners());
 
-  const loadCustomBanners = () => {
-    const activeBanners = getScheduledHeroBanners();
-    setBanners(activeBanners);
-    // Restart slide tracking if count changed
-    setCurrentSlide(0);
-  };
-
   useEffect(() => {
-    loadCustomBanners();
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'hero_banners'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.list)) {
+          const activeBanners = (data.list as HeroBanner[])
+            .filter(isBannerActive)
+            .sort((a, b) => a.order - b.order);
+          setBanners(activeBanners);
+          setCurrentSlide(0);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/hero_banners');
+    });
 
     const interval = setInterval(() => {
       setBanners((prev) => {
@@ -35,13 +43,9 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
       });
     }, 8000);
 
-    window.addEventListener('varudu-banners-updated', loadCustomBanners);
-    window.addEventListener('varudu-settings-updated', loadCustomBanners);
-
     return () => {
+      unsubscribe();
       clearInterval(interval);
-      window.removeEventListener('varudu-banners-updated', loadCustomBanners);
-      window.removeEventListener('varudu-settings-updated', loadCustomBanners);
     };
   }, []);
 

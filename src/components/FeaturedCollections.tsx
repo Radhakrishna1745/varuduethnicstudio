@@ -7,6 +7,8 @@ import React, { useState, useEffect } from 'react';
 import { ProductCollection } from '../types';
 import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film, Heart, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getDynamicCollections, incrementCollectionViews } from '../utils';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { onSnapshot, doc } from 'firebase/firestore';
 
 // Helper to normalize legacy and new categories so everything is beautifully merged
 const normalizeCategoryLabel = (cat: string): string => {
@@ -92,13 +94,18 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleUpdate = () => {
-      setProducts(getDynamicCollections());
-    };
-    window.addEventListener('varudu-collections-updated', handleUpdate);
-    return () => {
-      window.removeEventListener('varudu-collections-updated', handleUpdate);
-    };
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'collections'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.list)) {
+          setProducts(data.list as ProductCollection[]);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/collections');
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Reset active image scroller index when switching active view item

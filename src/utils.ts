@@ -5,7 +5,7 @@
 
 import { CustomerLead, Appointment, ProductCollection, LookbookItem } from './types';
 import { COLLECTIONS, LOOKBOOK_GALLERY } from './data';
-import { collection, doc, setDoc, updateDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, onSnapshot, getDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, uploadToStorage, deleteFromStorage, parseCloudinaryUrlOrPath } from './firebase';
 
 // Key names kept for backward compatibility if any imports or type dependencies refer to them
@@ -718,6 +718,9 @@ export interface MediaAsset {
   public_id?: string;
   secure_url?: string;
   media_type?: 'image' | 'video';
+  url?: string;
+  timestamp?: number;
+  uploadTimestamp?: number;
 }
 
 /**
@@ -753,9 +756,33 @@ export const uploadMediaAsset = async (
   const fileType = file.type?.startsWith('video/') ? 'video' : 'image';
   const { publicId } = parseCloudinaryUrlOrPath(fileUrl);
   
+  const assetTitle = title || originalName.split('.')[0] || 'Untitled Asset';
+  
+  // Prevent duplicate records & delete old image record upon uploading a replacement image
+  try {
+    const qName = query(collection(db, 'media'), where('fileName', '==', originalName));
+    const querySnapshotN = await getDocs(qName);
+    for (const docSnap of querySnapshotN.docs) {
+      await deleteDoc(doc(db, 'media', docSnap.id));
+    }
+    
+    if (assetTitle) {
+      const qTitle = query(collection(db, 'media'), where('title', '==', assetTitle));
+      const querySnapshotT = await getDocs(qTitle);
+      for (const docSnap of querySnapshotT.docs) {
+        if (docSnap.id !== mediaId) {
+          await deleteDoc(doc(db, 'media', docSnap.id));
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Clean up of duplicate/replacement media record failed:', err);
+  }
+  
+  const now = Date.now();
   const mediaItem: MediaAsset = {
     id: mediaId,
-    title: title || originalName.split('.')[0] || 'Untitled Asset',
+    title: assetTitle,
     fileName: originalName,
     fileUrl,
     uploadDate: new Date().toISOString(),
@@ -764,6 +791,9 @@ export const uploadMediaAsset = async (
     public_id: publicId || mediaId,
     secure_url: fileUrl,
     media_type: fileType,
+    url: fileUrl,
+    timestamp: now,
+    uploadTimestamp: now
   };
   
   // Save registry in Firestore

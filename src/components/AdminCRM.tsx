@@ -16,13 +16,13 @@ import {
   uploadMediaAsset, updateMediaAssetMetadata, deleteMediaAsset, MediaAsset,
   getStoredHeroBanners, saveHeroBanners, compressImageBeforeUpload, getCollectionViews, generateSitemapXmlContent
 } from '../utils';
-import { uploadToStorage, deleteFromStorage, auth, db, getCloudinaryConfig } from '../firebase';
+import { uploadToStorage, deleteFromStorage, auth, db, getCloudinaryConfig, handleFirestoreError, OperationType } from '../firebase';
 import { 
   signInWithPopup, GoogleAuthProvider, signInAnonymously, 
   onAuthStateChanged, signOut, User,
   signInWithEmailAndPassword, createUserWithEmailAndPassword
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Filter, Sliders, MessageSquare, Phone, Clock, Download, 
@@ -46,6 +46,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
   // Active Tab
   const [crmTab, setCrmTab] = useState<'leads' | 'appointments' | 'analytics' | 'media' | 'banners'>('leads');
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   // Leads & Appointments States
   const [leads, setLeads] = useState<CustomerLead[]>([]);
@@ -712,6 +713,71 @@ export default function AdminCRM({ onClose }: CRMProps) {
     return () => unsubscribe();
   }, []);
 
+  // Real-time Firestore Snapshot Syncer
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // 1. Subscribe to Hero Banners
+    const unsubscribeBanners = onSnapshot(doc(db, 'settings', 'hero_banners'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.list)) {
+          setBannersList(data.list as HeroBanner[]);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/hero_banners');
+    });
+
+    // 2. Subscribe to Collections
+    const unsubscribeCollections = onSnapshot(doc(db, 'settings', 'collections'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.list)) {
+          setCollectionsList(data.list as ProductCollection[]);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/collections');
+    });
+
+    // 3. Subscribe to Lookbook
+    const unsubscribeLookbook = onSnapshot(doc(db, 'settings', 'lookbook'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.list)) {
+          setLookbookList(data.list as LookbookItem[]);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/lookbook');
+    });
+
+    // 4. Subscribe to Media Library
+    const unsubscribeMedia = onSnapshot(collection(db, 'media'), (snapshot) => {
+      const mediaList: MediaAsset[] = [];
+      snapshot.forEach(docSnap => {
+        mediaList.push(docSnap.data() as MediaAsset);
+      });
+      // Sort media by upload timestamp descending
+      mediaList.sort((a, b) => {
+        const timeA = a.uploadTimestamp || a.timestamp || new Date(a.uploadDate).getTime() || 0;
+        const timeB = b.uploadTimestamp || b.timestamp || new Date(b.uploadDate).getTime() || 0;
+        return timeB - timeA;
+      });
+      setMediaAssets(mediaList);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'media');
+    });
+
+    return () => {
+      unsubscribeBanners();
+      unsubscribeCollections();
+      unsubscribeLookbook();
+      unsubscribeMedia();
+    };
+  }, [isAuthenticated, refreshCounter]);
+
   // Load collection views from Firestore
   useEffect(() => {
     async function loadViews() {
@@ -776,22 +842,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
     loadCloudinary();
 
-    // Load general media assets list
-    const loadCachedMedia = () => {
-      // Direct empty start, populated via live realtime event listeners
-    };
-    loadCachedMedia();
-
-    const handleMediaUpdate = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail && Array.isArray(detail)) {
-        setMediaAssets(detail);
-      }
-    };
-    window.addEventListener('varudu-media-updated', handleMediaUpdate as EventListener);
-
     return () => {
-      window.removeEventListener('varudu-media-updated', handleMediaUpdate as EventListener);
       if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
         try {
           URL.revokeObjectURL(adminVideoUrl);
@@ -956,6 +1007,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
       setNewAssetFiles([]);
       const fileInput = document.getElementById('general-asset-input') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
+      setRefreshCounter(prev => prev + 1);
       playRegalGoldChime();
     } catch (err: any) {
       console.error('Failed to upload media assets loop:', err);
@@ -973,6 +1025,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
         try {
           await deleteMediaAsset(item.id, item.fileUrl, item.category, item.fileName);
           setMediaUploadSuccess(`Media asset "${item.title}" deleted successfully!`);
+          setRefreshCounter(prev => prev + 1);
           playRegalGoldChime();
         } catch (err) {
           console.error('Failed to delete media asset:', err);
