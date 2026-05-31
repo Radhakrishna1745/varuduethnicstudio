@@ -774,16 +774,21 @@ export default function AdminCRM({ onClose }: CRMProps) {
     const unsubscribeStaticPhotos = onSnapshot(collection(db, 'static_photos'), (snapshot) => {
       console.log('[Firestore] static_photos snapshot updates received. Items count:', snapshot.size);
       
-      // Default configurations for fallbacks
-      let hero0 = 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600';
-      let hero1 = 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600';
-      let hero2 = 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600';
-      let legacy = 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=1200';
+      // Default configurations or cache fallbacks for backward compatibility
+      const cacheHero0 = getCachedSetting('web_photos', 'web_photo_hero_0', '');
+      const cacheHero1 = getCachedSetting('web_photos', 'web_photo_hero_1', '');
+      const cacheHero2 = getCachedSetting('web_photos', 'web_photo_hero_2', '');
+      const cacheLegacy = getCachedSetting('web_photos', 'web_photo_legacy', '');
 
-      let has0 = false;
-      let has1 = false;
-      let has2 = false;
-      let hasLegacy = false;
+      let hero0 = cacheHero0 || 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600';
+      let hero1 = cacheHero1 || 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600';
+      let hero2 = cacheHero2 || 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600';
+      let legacy = cacheLegacy || 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=1200';
+
+      let has0 = !!cacheHero0;
+      let has1 = !!cacheHero1;
+      let has2 = !!cacheHero2;
+      let hasLegacy = !!cacheLegacy;
 
       const itemsList: any[] = [];
       snapshot.forEach(docSnap => {

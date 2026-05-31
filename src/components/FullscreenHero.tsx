@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Calendar, Upload, MessageSquare, MapPin, Sparkles, Shield, Trophy, Ruler } from 'lucide-react';
-import { getScheduledHeroBanners, isBannerActive } from '../utils';
+import { getScheduledHeroBanners, isBannerActive, getCachedSetting } from '../utils';
 import { HeroBanner } from '../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { onSnapshot, doc } from 'firebase/firestore';
@@ -34,6 +34,12 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
       handleFirestoreError(error, OperationType.GET, 'settings/hero_banners');
     });
 
+    const handlePhotoUpdated = () => {
+      setBanners((prev) => [...prev]);
+    };
+    window.addEventListener('varudu-photo-updated', handlePhotoUpdated);
+    window.dispatchEvent(new CustomEvent('varudu-photo-updated')); // Initial load sync trigger
+
     const interval = setInterval(() => {
       setBanners((prev) => {
         if (prev.length > 0) {
@@ -46,6 +52,7 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
     return () => {
       unsubscribe();
       clearInterval(interval);
+      window.removeEventListener('varudu-photo-updated', handlePhotoUpdated);
     };
   }, []);
 
@@ -70,7 +77,7 @@ export default function FullscreenHero({ onNavigate }: HeroProps) {
         >
           {/* Zoom Overlay (Ken Burns Animation) */}
           <img
-            src={slide.imageUrl}
+            src={getCachedSetting('web_photos', `web_photo_hero_${index}`, '') || slide.imageUrl}
             alt={slide.title}
             className={`w-full h-full object-cover object-top ${
               index === currentSlide ? 'animate-ken-burns' : ''

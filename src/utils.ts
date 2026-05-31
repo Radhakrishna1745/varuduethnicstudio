@@ -282,11 +282,29 @@ export const startLiveSync = () => {
     }
   });
 
+  const unsubscribeStaticPhotos = onSnapshot(collection(db, 'static_photos'), (snapshot) => {
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      if (data && data.url) {
+        if (!_settingsInMemory['web_photos']) {
+          _settingsInMemory['web_photos'] = {};
+        }
+        _settingsInMemory['web_photos'][docSnap.id] = data.url;
+      }
+    });
+    window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: snapshot.size }));
+  }, (error) => {
+    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
+      console.warn('Static Photos Sync Error:', error);
+    }
+  });
+
   return () => {
     unsubscribeLeads();
     unsubscribeAppts();
     unsubscribeSettings();
     unsubscribeMedia();
+    unsubscribeStaticPhotos();
   };
 };
 
