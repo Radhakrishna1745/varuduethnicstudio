@@ -654,7 +654,18 @@ export const saveSetting = async (docId: string, data: Record<string, any>) => {
 
 // --- DYNAMIC WEB PHOTO CUSTOMIZER UTILITIES ---
 export const getWebPhoto = async (key: string, defaultUrl: string): Promise<string> => {
-  // Grab URL directly from synced settings
+  try {
+    const docSnap = await getDoc(doc(db, 'static_photos', key));
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data && data.url) {
+        return data.url;
+      }
+    }
+  } catch (error) {
+    console.warn('Error fetching static web photo from Firestore, falling back to cached or default:', error);
+  }
+  // Fallback to legacy sync cache if exists
   const cachedUrl = getCachedSetting('web_photos', key, '');
   if (cachedUrl) return cachedUrl;
   return defaultUrl;
@@ -676,7 +687,17 @@ export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
       });
     }
     
-    // Save mapping in settings Firestore document
+    // Save record to Firestore collection 'static_photos'
+    await setDoc(doc(db, 'static_photos', key), {
+      id: key,
+      url: downloadUrl,
+      timestamp: Date.now(),
+      updatedAt: new Date().toISOString()
+    });
+
+    console.log(`[StaticPhotos] Upload success for static photo [${key}]: ${downloadUrl}`);
+    
+    // Save mapping in settings Firestore document for backward compatibility
     await saveSetting('web_photos', { [key]: downloadUrl });
     
     // Dispatch update event
@@ -689,17 +710,21 @@ export const saveWebPhoto = async (key: string, file: Blob): Promise<void> => {
 
 export const deleteWebPhoto = async (key: string): Promise<void> => {
   try {
+    // Delete record from Firestore collection 'static_photos'
+    await deleteDoc(doc(db, 'static_photos', key));
+    console.log(`[StaticPhotos] Delete success for static photo [${key}]`);
+
     const cachedUrl = getCachedSetting('web_photos', key, '');
     // Remove references in Firestore Settings by setting the key to ""
     await saveSetting('web_photos', { [key]: "" });
-    // Delete file from Cloudinary Storage
+    // Delete file from Cloudinary/Firebase Storage
     if (cachedUrl) {
       await deleteFromStorage(cachedUrl);
     } else {
       await deleteFromStorage(`hero-banners/${key}`);
     }
   } catch (error) {
-    console.warn('Failed to delete web photo from Cloudinary:', error);
+    console.warn('Failed to delete web photo from storage:', error);
   }
   window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: { key } }));
 };

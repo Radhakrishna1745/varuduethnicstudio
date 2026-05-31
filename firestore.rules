@@ -104,6 +104,11 @@ service cloud.firestore {
       allow read, write: if true; // Publicly readable and editable in sandbox/demo environment
     }
 
+    // Static photos collection rules
+    match /static_photos/{photoId} {
+      allow read, write: if true; // Publicly readable and editable in sandbox/demo environment
+    }
+
     // Media collection rules
     match /media/{mediaId} {
       allow read: if true; // Publicly readable by all visitors

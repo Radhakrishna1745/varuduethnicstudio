@@ -770,11 +770,65 @@ export default function AdminCRM({ onClose }: CRMProps) {
       handleFirestoreError(error, OperationType.GET, 'media');
     });
 
+    // 5. Subscribe to Website Static Photos
+    const unsubscribeStaticPhotos = onSnapshot(collection(db, 'static_photos'), (snapshot) => {
+      console.log('[Firestore] static_photos snapshot updates received. Items count:', snapshot.size);
+      
+      // Default configurations for fallbacks
+      let hero0 = 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600';
+      let hero1 = 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600';
+      let hero2 = 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600';
+      let legacy = 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=1200';
+
+      let has0 = false;
+      let has1 = false;
+      let has2 = false;
+      let hasLegacy = false;
+
+      const itemsList: any[] = [];
+      snapshot.forEach(docSnap => {
+        itemsList.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      // Sort by latest upload timestamp descending
+      itemsList.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      // Map values
+      itemsList.forEach(item => {
+        if (item.id === 'web_photo_hero_0' && item.url) {
+          hero0 = item.url;
+          has0 = true;
+        } else if (item.id === 'web_photo_hero_1' && item.url) {
+          hero1 = item.url;
+          has1 = true;
+        } else if (item.id === 'web_photo_hero_2' && item.url) {
+          hero2 = item.url;
+          has2 = true;
+        } else if (item.id === 'web_photo_legacy' && item.url) {
+          legacy = item.url;
+          hasLegacy = true;
+        }
+      });
+
+      setPhotoHero0(hero0);
+      setPhotoHero1(hero1);
+      setPhotoHero2(hero2);
+      setPhotoLegacy(legacy);
+
+      setHasCustomHero0(has0);
+      setHasCustomHero1(has1);
+      setHasCustomHero2(has2);
+      setHasCustomLegacy(hasLegacy);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'static_photos');
+    });
+
     return () => {
       unsubscribeBanners();
       unsubscribeCollections();
       unsubscribeLookbook();
       unsubscribeMedia();
+      unsubscribeStaticPhotos();
     };
   }, [isAuthenticated, refreshCounter]);
 
@@ -806,30 +860,6 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
     loadStoredVideo();
 
-    // Load web photos
-    async function loadWebPhotos() {
-      const hero0 = await getWebPhoto('web_photo_hero_0', 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600');
-      const hero1 = await getWebPhoto('web_photo_hero_1', 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600');
-      const hero2 = await getWebPhoto('web_photo_hero_2', 'https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600');
-      const legacy = await getWebPhoto('web_photo_legacy', 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=1200');
-
-      setPhotoHero0(hero0);
-      setPhotoHero1(hero1);
-      setPhotoHero2(hero2);
-      setPhotoLegacy(legacy);
-
-      const cached0 = getCachedSetting('web_photos', 'web_photo_hero_0', '');
-      const cached1 = getCachedSetting('web_photos', 'web_photo_hero_1', '');
-      const cached2 = getCachedSetting('web_photos', 'web_photo_hero_2', '');
-      const cachedLegacy = getCachedSetting('web_photos', 'web_photo_legacy', '');
-
-      setHasCustomHero0(!!cached0);
-      setHasCustomHero1(!!cached1);
-      setHasCustomHero2(!!cached2);
-      setHasCustomLegacy(!!cachedLegacy);
-    }
-    loadWebPhotos();
-
     // Load Cloudinary config
     async function loadCloudinary() {
       try {
@@ -859,21 +889,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
     try {
       await saveWebPhoto(key, file);
-      const cached = getCachedSetting('web_photos', key, '');
-      const url = cached || URL.createObjectURL(file);
-      if (key === 'web_photo_hero_0') {
-        setPhotoHero0(url);
-        setHasCustomHero0(true);
-      } else if (key === 'web_photo_hero_1') {
-        setPhotoHero1(url);
-        setHasCustomHero1(true);
-      } else if (key === 'web_photo_hero_2') {
-        setPhotoHero2(url);
-        setHasCustomHero2(true);
-      } else if (key === 'web_photo_legacy') {
-        setPhotoLegacy(url);
-        setHasCustomLegacy(true);
-      }
+      setRefreshCounter(prev => prev + 1);
       setMediaUploadSuccess(`Webpage photo updated successfully!`);
       playRegalGoldChime();
     } catch (e) {
@@ -884,19 +900,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const handlePhotoClear = async (key: string) => {
     try {
       await deleteWebPhoto(key);
-      if (key === 'web_photo_hero_0') {
-        setPhotoHero0('https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=82&w=1600');
-        setHasCustomHero0(false);
-      } else if (key === 'web_photo_hero_1') {
-        setPhotoHero1('https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=1600');
-        setHasCustomHero1(false);
-      } else if (key === 'web_photo_hero_2') {
-        setPhotoHero2('https://images.unsplash.com/photo-1605001011156-cbf0b0f67a51?auto=format&fit=crop&q=82&w=1600');
-        setHasCustomHero2(false);
-      } else if (key === 'web_photo_legacy') {
-        setPhotoLegacy('https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=1200');
-        setHasCustomLegacy(false);
-      }
+      setRefreshCounter(prev => prev + 1);
       setMediaUploadSuccess(`Photo reverted to original default branding.`);
       playRegalGoldChime();
     } catch (e) {
