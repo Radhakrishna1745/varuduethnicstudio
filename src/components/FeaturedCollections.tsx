@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { ProductCollection } from '../types';
-import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film, Heart, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { getDynamicCollections, incrementCollectionViews } from '../utils';
+import React, { useState, useEffect, useRef } from 'react';
+import { ProductCollection, GroomVideo } from '../types';
+import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film, Heart, Share2, ChevronLeft, ChevronRight, Volume2, VolumeX, Eye } from 'lucide-react';
+import { getDynamicCollections, incrementCollectionViews, getDynamicGroomVideos } from '../utils';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { onSnapshot, doc } from 'firebase/firestore';
 
@@ -76,6 +76,9 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [selectedProduct, setSelectedProduct] = useState<ProductCollection | null>(null);
   const [products, setProducts] = useState<ProductCollection[]>(() => getDynamicCollections());
+  const [groomVideos, setGroomVideos] = useState<GroomVideo[]>(() => getDynamicGroomVideos().filter(v => v.status !== 'disabled'));
+  const [selectedVideo, setSelectedVideo] = useState<GroomVideo | null>(null);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(true);
   
   // Multiple images in modal tracking
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
@@ -108,12 +111,26 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const unsubGroomVids = onSnapshot(doc(db, 'settings', 'groom_videos'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.list)) {
+          setGroomVideos((data.list as GroomVideo[]).filter(v => v.status !== 'disabled'));
+        }
+      }
+    }, (error) => {
+      console.warn("FeaturedCollections groom videos sync warning:", error);
+    });
+    return () => unsubGroomVids();
+  }, []);
+
   // Reset active image scroller index when switching active view item
   useEffect(() => {
     setActiveImageIndex(0);
   }, [selectedProduct]);
 
-  const categories = ['All', 'Sherwanis', 'Indo-Westerns', 'Tuxedos', 'Kurta Sets', 'Reception Wear', 'Accessories'];
+  const categories = ['All', 'Sherwanis', 'Indo-Westerns', 'Tuxedos', 'Kurta Sets', 'Reception Wear', 'Accessories', 'Royal Reels 📹'];
 
   // Handle product inspection and record views metric beautifully
   const handleInspectProduct = (product: ProductCollection) => {
@@ -208,119 +225,258 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
 
         {/* Interactive Products Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8" id="collections-grid">
-          {filteredProducts.map((product) => (
-            <div
-              key={product.id}
-              className="group bg-[#121212] border border-[#C5A85D]/15 hover:border-[#C5A85D]/40 rounded overflow-hidden flex flex-col justify-between transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_8px_30px_rgb(229,196,109,0.05)] relative"
-            >
-              {/* Product Visual Container with hover zooms */}
-              <div className="relative h-[380px] overflow-hidden bg-black cursor-pointer" onClick={() => handleInspectProduct(product)}>
-                <IndexedAsset
-                  src={product.imageUrl}
-                  videoSrc={product.videoUrl}
-                  alt={product.name}
-                  className="w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-105 group-hover:brightness-95"
-                />
-                
-                {/* Premium tag */}
-                <div className="absolute top-4 left-4 bg-black/85 px-3 py-1 border border-[#C5A85D]/30 text-white font-sans text-[9px] uppercase tracking-widest flex items-center space-x-1.5 backdrop-blur-sm z-10">
-                  <Sparkles className="w-3 h-3 text-[#E5C46D]" />
-                  <span>{normalizeCategoryLabel(product.category)}</span>
-                </div>
-
-                {/* Heart wishlist top right */}
-                <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
-                  <button
-                    onClick={(e) => toggleWishlist(product.id, e)}
-                    className="p-2 rounded-full bg-black/80 hover:bg-black border border-white/5 text-[#E5C46D] hover:scale-110 transition-all cursor-pointer backdrop-blur-sm"
-                    title={wishlist.includes(product.id) ? "Remove from wishlist" : "Add to wishlist"}
-                  >
-                    <Heart className={`w-4 h-4 ${wishlist.includes(product.id) ? 'fill-[#E5C46D]' : ''}`} />
-                  </button>
-                  <button
-                    onClick={(e) => handleShareProduct(product, e)}
-                    className="p-2 rounded-full bg-black/80 hover:bg-black border border-white/5 text-[#C5A85D] hover:scale-110 transition-all cursor-pointer backdrop-blur-sm relative"
-                    title="Share look link"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    {copiedLink === product.id && (
-                      <span className="absolute bottom-full right-0 mb-2 whitespace-nowrap bg-amber-950 border border-[#C5A85D]/45 text-[#E5C46D] text-[9px] px-2 py-0.5 rounded font-sans uppercase font-bold tracking-widest animate-fade-in shadow-lg">
-                        Copied Link!
-                      </span>
-                    )}
-                  </button>
-                </div>
-
-                {/* Price indicators */}
-                <div className="absolute bottom-4 right-4 bg-gradient-to-r from-[#4A0E17] to-[#2F050B]/90 px-3 py-1.5 border border-[#C5A85D]/40 text-[#F5EFEB] font-sans font-medium text-xs tracking-wider z-10">
-                  {product.priceRange}
-                </div>
-
-                {/* Hidden hover details overlay */}
-                <div className="absolute inset-x-0 bottom-0 bg-[#0A0A0A]/95 p-6 border-t border-[#C5A85D]/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out flex flex-col justify-between h-[60%] z-10">
-                  <div>
-                    <h4 className="font-display text-base text-[#E5C46D] font-medium tracking-wide">
-                      Craft Highlights
-                    </h4>
-                    <ul className="mt-3 space-y-1.5">
-                      {product.highlights.slice(0, 3).map((hl, i) => (
-                        <li key={i} className="flex items-start text-[11px] text-gray-300 font-sans tracking-wide">
-                          <Check className="w-3.5 h-3.5 text-[#C5A85D] mr-2 mt-0.5 shrink-0" />
-                          <span>{hl}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="text-[10px] text-gray-400 font-serif italic border-t border-[#C5A85D]/10 pt-3">
-                    Click anywhere on card to inspect bespoke options
-                  </div>
-                </div>
-              </div>
-
-              {/* Product text content fields */}
-              <div className="p-6 flex-1 flex flex-col justify-between">
-                <div>
-                  <h3 className="font-display font-medium text-lg text-white tracking-widest group-hover:text-[#E5C46D] transition-colors leading-snug">
-                    {product.name}
-                  </h3>
-                  <p className="font-serif text-xs text-gray-400 leading-relaxed mt-2 line-clamp-2">
-                    {product.description}
-                  </p>
+          {activeCategory === 'Royal Reels 📹' ? (
+            groomVideos.map((video) => (
+              <div
+                key={`collection-reel-${video.id}`}
+                className="group bg-[#121212] border border-[#C5A85D]/15 hover:border-[#C5A85D]/40 rounded overflow-hidden flex flex-col justify-between transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_8px_30px_rgb(229,196,109,0.05)] relative"
+              >
+                {/* Cinema Reel Video Player Container */}
+                <div 
+                  className="relative h-[380px] overflow-hidden bg-black cursor-pointer group-hover:brightness-95 transition-all" 
+                  onClick={() => setSelectedVideo(video)}
+                >
+                  <video
+                    src={video.videoUrl}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-105"
+                  />
                   
-                  {/* Subtle styling tags spacer */}
-                  <div className="flex flex-wrap gap-1.5 mt-4">
-                    {product.tags.map(tag => (
-                      <span key={tag} className="bg-white/5 border border-white/5 px-2.5 py-0.5 rounded text-[9px] text-[#C5A85D] tracking-wider uppercase font-sans">
-                        #{tag}
-                      </span>
-                    ))}
+                  {/* Floating category decoration tag */}
+                  <div className="absolute top-4 left-4 bg-[#4A0E17] px-3 py-1 border border-[#C5A85D]/30 text-white font-sans text-[9px] uppercase tracking-widest flex items-center space-x-1.5 backdrop-blur-sm z-10 font-bold">
+                    <Film className="w-3 h-3 text-[#E5C46D] animate-pulse" />
+                    <span>{video.category}</span>
+                  </div>
+
+                  <div className="absolute top-4 right-4 flex items-center space-x-1 px-2.5 py-1 rounded bg-black/85 border border-[#C5A85D]/20 text-gray-200 text-[9px] font-mono z-10 backdrop-blur-sm">
+                    <Eye className="w-3.5 h-3.5 text-amber-300" />
+                    <span>{video.views || 920} Views</span>
+                  </div>
+
+                  {/* Play circle overlay button */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/15 transition-all pointer-events-none">
+                    <div className="p-4 bg-[#4A0E17]/95 border border-[#C5A85D]/50 text-[#C5A85D] rounded-full shadow-xl transition-all scale-95 group-hover:scale-105 group-hover:bg-[#C5A85D] group-hover:text-black">
+                      <Play className="w-6 h-6 fill-current text-current" />
+                    </div>
+                  </div>
+
+                  {/* Cinema Vignette Overlay */}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-transparent to-transparent h-28 pointer-events-none" />
+                </div>
+
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-display font-medium text-lg text-white tracking-widest group-hover:text-[#E5C46D] transition-colors leading-snug">
+                      {video.title}
+                    </h3>
+                    <p className="font-serif text-xs text-gray-400 leading-relaxed mt-2 italic">
+                      &ldquo;{video.description}&rdquo;
+                    </p>
+                    <div className="text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] mt-4 font-bold">
+                      🎬 Credits: {video.credits}
+                    </div>
+                  </div>
+
+                  {/* Reel customized high conversion quick inquiries */}
+                  <div className="grid grid-cols-2 gap-3 mt-6 border-t border-[#C5A85D]/10 pt-4 font-sans">
+                    <button
+                      onClick={() => {
+                        onSelectProduct(`${video.title} (Style Reel inspired)`);
+                        const target = document.getElementById('consultation-engine');
+                        if (target) {
+                          target.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
+                      className="flex items-center justify-center space-x-1.5 py-2.5 px-3 border border-[#C5A85D] hover:bg-[#C5A85D] text-[#C5A85D] hover:text-black font-sans text-[10px] uppercase font-semibold tracking-widest rounded transition-all cursor-pointer"
+                    >
+                      <Send className="w-3 h-3" />
+                      <span>Request Fitting</span>
+                    </button>
+
+                    <a
+                      href={`https://wa.me/919000777265?text=${encodeURIComponent(`Hi Varudu team! I am viewing your active elite collections and watching the "${video.title}" Cinema Reel. Can I enquire about getting customized attire of this ethnic styling?`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center space-x-1.5 py-2.5 px-3 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 text-emerald-400 hover:text-white font-sans text-[10px] uppercase font-semibold tracking-widest rounded transition-all"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>WhatsApp Link</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            filteredProducts.map((product) => (
+              <div
+                key={product.id}
+                className="group bg-[#121212] border border-[#C5A85D]/15 hover:border-[#C5A85D]/40 rounded overflow-hidden flex flex-col justify-between transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_8px_30px_rgb(229,196,109,0.05)] relative"
+              >
+                {/* Product Visual Container with hover zooms */}
+                <div className="relative h-[380px] overflow-hidden bg-black cursor-pointer" onClick={() => handleInspectProduct(product)}>
+                  <IndexedAsset
+                    src={product.imageUrl}
+                    videoSrc={product.videoUrl}
+                    alt={product.name}
+                    className="w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-105 group-hover:brightness-95"
+                    isBackgroundLoop={true}
+                  />
+                  
+                  {/* Premium tag */}
+                  <div className="absolute top-4 left-4 bg-black/85 px-3 py-1 border border-[#C5A85D]/30 text-white font-sans text-[9px] uppercase tracking-widest flex items-center space-x-1.5 backdrop-blur-sm z-10">
+                    <Sparkles className="w-3 h-3 text-[#E5C46D]" />
+                    <span>{normalizeCategoryLabel(product.category)}</span>
+                  </div>
+
+                  {/* Heart wishlist top right */}
+                  <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
+                    <button
+                      onClick={(e) => toggleWishlist(product.id, e)}
+                      className="p-2 rounded-full bg-black/80 hover:bg-black border border-white/5 text-[#E5C46D] hover:scale-110 transition-all cursor-pointer backdrop-blur-sm"
+                      title={wishlist.includes(product.id) ? "Remove from wishlist" : "Add to wishlist"}
+                    >
+                      <Heart className={`w-4 h-4 ${wishlist.includes(product.id) ? 'fill-[#E5C46D]' : ''}`} />
+                    </button>
+                    <button
+                      onClick={(e) => handleShareProduct(product, e)}
+                      className="p-2 rounded-full bg-black/80 hover:bg-black border border-white/5 text-[#C5A85D] hover:scale-110 transition-all cursor-pointer backdrop-blur-sm relative"
+                      title="Share look link"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      {copiedLink === product.id && (
+                        <span className="absolute bottom-full right-0 mb-2 whitespace-nowrap bg-amber-950 border border-[#C5A85D]/45 text-[#E5C46D] text-[9px] px-2 py-0.5 rounded font-sans uppercase font-bold tracking-widest animate-fade-in shadow-lg">
+                          Copied Link!
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Price indicators */}
+                  <div className="absolute bottom-4 right-4 bg-gradient-to-r from-[#4A0E17] to-[#2F050B]/90 px-3 py-1.5 border border-[#C5A85D]/40 text-[#F5EFEB] font-sans font-medium text-xs tracking-wider z-10">
+                    {product.priceRange}
+                  </div>
+
+                  {/* Hidden hover details overlay */}
+                  <div className="absolute inset-x-0 bottom-0 bg-[#0A0A0A]/95 p-6 border-t border-[#C5A85D]/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out flex flex-col justify-between h-[60%] z-10">
+                    <div>
+                      <h4 className="font-display text-base text-[#E5C46D] font-medium tracking-wide">
+                        Craft Highlights
+                      </h4>
+                      <ul className="mt-3 space-y-1.5">
+                        {product.highlights.slice(0, 3).map((hl, i) => (
+                          <li key={i} className="flex items-start text-[11px] text-gray-300 font-sans tracking-wide">
+                            <Check className="w-3.5 h-3.5 text-[#C5A85D] mr-2 mt-0.5 shrink-0" />
+                            <span>{hl}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="text-[10px] text-gray-400 font-serif italic border-t border-[#C5A85D]/10 pt-3">
+                      Click anywhere on card to inspect bespoke options
+                    </div>
                   </div>
                 </div>
 
-                {/* Core high conversion action controllers */}
-                <div className="grid grid-cols-2 gap-3 mt-6 border-t border-[#C5A85D]/10 pt-4">
-                  <button
-                    onClick={() => handleQuickInquiry(product)}
-                    className="flex items-center justify-center space-x-1.5 py-2.5 px-3 border border-[#C5A85D] hover:bg-[#C5A85D] text-[#C5A85D] hover:text-black font-sans text-[10px] uppercase font-semibold tracking-widest rounded transition-all cursor-pointer"
-                  >
-                    <Send className="w-3 h-3" />
-                    <span>Inquire Swatch</span>
-                  </button>
+                {/* Product text content fields */}
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-display font-medium text-lg text-white tracking-widest group-hover:text-[#E5C46D] transition-colors leading-snug">
+                      {product.name}
+                    </h3>
+                    <p className="font-serif text-xs text-gray-400 leading-relaxed mt-2 line-clamp-2">
+                      {product.description}
+                    </p>
+                    
+                    {/* Subtle styling tags spacer */}
+                    <div className="flex flex-wrap gap-1.5 mt-4">
+                      {product.tags.map(tag => (
+                        <span key={tag} className="bg-white/5 border border-white/5 px-2.5 py-0.5 rounded text-[9px] text-[#C5A85D] tracking-wider uppercase font-sans">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
 
-                  <a
-                    href={getWhatsAppMessageLink(product)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center space-x-1.5 py-2.5 px-3 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 text-emerald-400 hover:text-white font-sans text-[10px] uppercase font-semibold tracking-widest rounded transition-all"
-                  >
-                    <MessageSquare className="w-3 h-3" />
-                    <span>WhatsApp</span>
-                  </a>
+                  {/* Core high conversion action controllers */}
+                  <div className="grid grid-cols-2 gap-3 mt-6 border-t border-[#C5A85D]/10 pt-4">
+                    <button
+                      onClick={() => handleQuickInquiry(product)}
+                      className="flex items-center justify-center space-x-1.5 py-2.5 px-3 border border-[#C5A85D] hover:bg-[#C5A85D] text-[#C5A85D] hover:text-black font-sans text-[10px] uppercase font-semibold tracking-widest rounded transition-all cursor-pointer"
+                    >
+                      <Send className="w-3 h-3" />
+                      <span>Inquire Swatch</span>
+                    </button>
+
+                    <a
+                      href={getWhatsAppMessageLink(product)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center space-x-1.5 py-2.5 px-3 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 text-emerald-400 hover:text-white font-sans text-[10px] uppercase font-semibold tracking-widest rounded transition-all"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>WhatsApp</span>
+                    </a>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
+
+        {/* Row of Dynamic Reels underneath the Collections grid */}
+        {activeCategory !== 'Royal Reels 📹' && groomVideos.length > 0 && (
+          <div className="mt-20 pt-16 border-t border-[#C5A85D]/10" id="collections-groom-cinema-showcase">
+            <div className="flex flex-col md:flex-row items-center justify-between mb-8">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[#C5A85D] font-sans font-semibold">
+                  Sartorial Postures in High Motion
+                </p>
+                <h3 className="font-display font-medium text-2xl text-white tracking-widest uppercase mt-1">
+                  Royal Groom <span className="text-gold-gradient italic font-serif font-light">Cinema Snippets</span>
+                </h3>
+              </div>
+              <button
+                onClick={() => setActiveCategory('Royal Reels 📹')}
+                className="mt-4 md:mt-0 font-sans text-[10px] font-bold text-[#C5A85D] hover:text-white uppercase tracking-[0.2em] flex items-center space-x-2 border-b border-[#C5A85D]/20 pb-0.5 cursor-pointer bg-transparent border-t-0 border-x-0 outline-none"
+              >
+                <span>View All {groomVideos.length} Reels</span>
+                <span>→</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {groomVideos.slice(0, 3).map((video) => (
+                <div 
+                  key={`highlight-${video.id}`}
+                  onClick={() => setSelectedVideo(video)}
+                  className="group bg-[#121212] border border-[#C5A85D]/10 hover:border-[#C5A85D]/40 p-3.5 rounded-lg cursor-pointer transition-all flex space-x-4 items-center"
+                >
+                  <div className="relative w-16 h-24 aspect-[9/16] bg-black rounded overflow-hidden shrink-0 border border-white/5">
+                    <video
+                      src={video.videoUrl}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/45 flex items-center justify-center group-hover:bg-black/10 transition-all">
+                      <Play className="w-5 h-5 text-white hover:text-[#C5A85D] fill-current" />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[8px] uppercase font-mono tracking-widest text-[#C5A85D] font-bold">{video.category}</span>
+                    <h4 className="text-white font-sans font-bold text-xs truncate uppercase mt-0.5 tracking-wider group-hover:text-[#E5C46D] transition-colors">{video.title}</h4>
+                    <p className="text-gray-400 text-[10px] font-serif italic mt-1 line-clamp-2 leading-relaxed">&ldquo;{video.description}&rdquo;</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bespoke Interactive Product Specs Modal */}
@@ -479,6 +635,89 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
           </div>
         );
       })()}
+
+      {/* Immersive Selected Video Reel Modal */}
+      {selectedVideo && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 z-50 animate-fade-in" id="groom-video-reel-modal">
+          <div className="relative w-full max-w-lg bg-[#0F0F0F] border border-[#C5A85D]/40 rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+            {/* Header / Info bar */}
+            <div className="p-4 border-b border-white/5 bg-black/80 flex items-center justify-between">
+              <div>
+                <span className="text-[9px] uppercase font-mono text-[#C5A85D] font-bold tracking-widest">{selectedVideo.category} Cinema Reel</span>
+                <h4 className="text-white font-sans font-bold text-sm tracking-wide uppercase truncate max-w-[260px]">{selectedVideo.title}</h4>
+              </div>
+              <button
+                onClick={() => setSelectedVideo(null)}
+                className="p-2 text-gray-400 hover:text-[#C5A85D] bg-white/5 rounded-full hover:scale-105 transition-all cursor-pointer border border-white/5"
+                title="Dismiss Reel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Immersive Vertical Video Container */}
+            <div className="relative flex-1 bg-black overflow-hidden flex items-center justify-center aspect-[9/16] min-h-[300px] max-h-[60vh] sm:max-h-[65vh]">
+              <video
+                src={selectedVideo.videoUrl}
+                autoPlay
+                controls
+                playsInline
+                loop
+                muted={isAudioMuted}
+                className="w-full h-full object-contain"
+              />
+
+              {/* Instant Mute/Unmute toggle indicator */}
+              <button
+                onClick={() => setIsAudioMuted(!isAudioMuted)}
+                className="absolute bottom-4 right-4 p-2.5 bg-black/80 hover:bg-black text-[#C5A85D] hover:scale-110 border border-[#C5A85D]/25 rounded-full z-20 cursor-pointer transition-all flex items-center justify-center shadow"
+                title={isAudioMuted ? "Unmute Audio" : "Mute Audio"}
+              >
+                {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+
+              <div className="absolute top-4 left-4 bg-[#4A0E17]/90 px-3 py-1 border border-[#C5A85D]/40 text-[#E5C46D] text-[9px] uppercase tracking-widest font-sans font-bold z-10 rounded shadow backdrop-blur-sm">
+                🎬 Royal Studio Walk Shorts
+              </div>
+            </div>
+
+            {/* Footer and dynamic CTA specifications */}
+            <div className="p-5 sm:p-6 bg-black/95 border-t border-white/5 space-y-4">
+              <div>
+                <p className="text-gray-300 font-serif text-xs italic leading-relaxed">&ldquo;{selectedVideo.description}&rdquo;</p>
+                <div className="text-[10px] text-amber-100 font-sans tracking-wide mt-2 block opacity-85">
+                  ✂ Tailoring & Styling Credits: <strong className="text-[#C5A85D] font-semibold">{selectedVideo.credits}</strong>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
+                <button
+                  onClick={() => {
+                    onSelectProduct(`${selectedVideo.title} (Motion Reel selection)`);
+                    setSelectedVideo(null);
+                    const target = document.getElementById('consultation-engine');
+                    if (target) {
+                      target.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
+                  className="w-full py-2 bg-[#C5A85D] hover:bg-[#D5B86D] text-black text-[10px] font-sans font-bold uppercase tracking-wider rounded transition-all cursor-pointer"
+                >
+                  Reserve Stylist
+                </button>
+                <a
+                  href={`https://wa.me/919000777265?text=${encodeURIComponent(`Hi Varudu team! I am watching the Groom Cinema Reel "${selectedVideo.title}" (${selectedVideo.category}) and would love to style my customized attire in similar patterns. Please advise.`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full text-center py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-sans font-bold uppercase tracking-wider rounded transition-all flex items-center justify-center space-x-1.5"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>WhatsApp Swatch</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </section>
   );

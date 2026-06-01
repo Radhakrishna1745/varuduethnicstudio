@@ -105,6 +105,19 @@ export interface LookbookItem {
   credits: string;
 }
 
+export interface GroomVideo {
+  id: string;
+  title: string;
+  category: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  description: string;
+  credits: string;
+  duration?: string;
+  views?: number;
+  status?: 'active' | 'disabled';
+}
+
 export type StaticPhotoKey = 'web_photo_hero_0' | 'web_photo_hero_1' | 'web_photo_hero_2' | 'web_photo_legacy';
 
 export interface StaticPhoto {

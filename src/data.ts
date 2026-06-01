@@ -220,3 +220,39 @@ export const RECENT_INQUIRIES_MOCK = [
   { name: 'Vikramaditya S.', city: 'Hyderabad', action: 'placed a customized Nawabi Sherwani Inquiry', minutes: '48 mins ago' },
   { name: 'Sarthak Kapoor', city: 'Secunderabad', action: 'requested a custom velvet Bandhgala sketch', minutes: '1 hr ago' }
 ];
+
+export const DEFAULT_GROOM_VIDEOS = [
+  {
+    id: 'vid-1',
+    title: 'The Royal Velvet Bandhgala Motion',
+    category: 'Indo-Western',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-model-wearing-traditional-indian-clothing-40224-large.mp4',
+    description: 'A cinematic high-definition tracking shot highlighting the seamless drapes and heavy hand-woven metallic gold embroidery on imported velvet fabrics.',
+    credits: 'Couture design by Master Draper Jagdish - Shot at Taj Krishna Hyderabad',
+    duration: '0:12',
+    views: 1240,
+    status: 'active'
+  },
+  {
+    id: 'vid-2',
+    title: 'Classic Ivory Sherwani Walkthrough',
+    category: 'Sherwani',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-groom-preparing-his-traditional-outfit-39987-large.mp4',
+    description: 'Immersive close-up slow-motion walk showcasing the majestic posture and custom gold button cuffs of our signature German Canvas-lined Ivory Sherwani.',
+    credits: 'Styled for Groom Dr. Aditya Singhania - Lake Palace Editorial',
+    duration: '0:18',
+    views: 3105,
+    status: 'active'
+  },
+  {
+    id: 'vid-3',
+    title: 'Lucknowi Chikankari Morning Mood',
+    category: 'Kurta-Pajama',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-man-under-colored-lights-43404-large.mp4',
+    description: 'Soft lighting panning over delicate shadow-weave cotton silk lucknowi panels, designed for ultimate thermic comfort during long morning groom sessions.',
+    credits: 'Stylist Selection - Rambagh Palace Session',
+    duration: '0:10',
+    views: 940,
+    status: 'active'
+  }
+];

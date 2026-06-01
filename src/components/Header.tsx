@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Crown, Menu, X, Landmark, Compass, Calendar, BookOpen, Sparkles, MessageCircle, Info, Lock } from 'lucide-react';
+import { Crown, Menu, X, Landmark, Compass, Calendar, BookOpen, Sparkles, MessageCircle, Info, Lock, Film } from 'lucide-react';
 
 interface HeaderProps {
   activeView: string;
@@ -21,6 +21,7 @@ export default function Header({ activeView, setActiveView, openAdminLock, onRep
     { id: 'home', label: 'Home', icon: Compass },
     { id: 'collections', label: 'Collections', icon: Sparkles },
     { id: 'lookbook', label: 'Lookbook', icon: Crown },
+    { id: 'reels', label: 'Royal Reels', icon: Film },
     { id: 'upload', label: 'Groom Consultation', icon: Sparkles },
     { id: 'appointment', label: 'Book VIP Slot', icon: Calendar },
     { id: 'about', label: 'Our Legacy', icon: Info },

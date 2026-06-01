@@ -4,13 +4,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner, StaticPhoto, StaticPhotoKey } from '../types';
+import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner, StaticPhoto, StaticPhotoKey, GroomVideo } from '../types';
 import { 
   getStoredLeads, updateLeadStatus, deleteLead,
   getStoredAppointments, updateAppointmentStatus, deleteAppointment,
   playRegalGoldChime,
   getDynamicCollections, saveDynamicCollections,
   getDynamicLookbook, saveDynamicLookbook,
+  getDynamicGroomVideos, saveDynamicGroomVideos,
   getWebPhoto, saveWebPhoto, deleteWebPhoto,
   saveSetting, getCachedSetting,
   uploadMediaAsset, updateMediaAssetMetadata, deleteMediaAsset, MediaAsset,
@@ -46,8 +47,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [isAuthPending, setIsAuthPending] = useState(false);
 
   // Active Tab
-  const [crmTab, setCrmTab] = useState<'leads' | 'appointments' | 'analytics' | 'media' | 'banners'>('leads');
+  const [crmTab, setCrmTab] = useState<'leads' | 'appointments' | 'analytics' | 'media' | 'banners' | 'reels'>('leads');
   const [refreshCounter, setRefreshCounter] = useState(0);
+
+  // --- GROOM REELS / VIDEOS STATE ENGINE ---
+  const [groomVideosList, setGroomVideosList] = useState<GroomVideo[]>(() => getDynamicGroomVideos());
+  const [editingGroomVid, setEditingGroomVid] = useState<GroomVideo | null>(null);
+  const [isAddingGroomVid, setIsAddingGroomVid] = useState(false);
+  const [isSavingGroomVid, setIsSavingGroomVid] = useState(false);
+
+  // Groom Video form states
+  const [gvTitle, setGvTitle] = useState('');
+  const [gvCategory, setGvCategory] = useState('Sherwani');
+  const [gvVideoUrlText, setGvVideoUrlText] = useState('');
+  const [gvVideoFile, setGvVideoFile] = useState<File | null>(null);
+  const [gvDescription, setGvDescription] = useState('');
+  const [gvCredits, setGvCredits] = useState('');
+  const [gvPreviewUrl, setGvPreviewUrl] = useState('');
+  const [gvStatus, setGvStatus] = useState<'active' | 'disabled'>('active');
 
   // Leads & Appointments States
   const [leads, setLeads] = useState<CustomerLead[]>([]);
@@ -327,6 +344,34 @@ export default function AdminCRM({ onClose }: CRMProps) {
     setFormSuccess('');
   };
 
+  const startEditGroomVideo = (gv: GroomVideo) => {
+    setEditingGroomVid(gv);
+    setIsAddingGroomVid(false);
+    setGvTitle(gv.title);
+    setGvCategory(gv.category);
+    setGvVideoUrlText(gv.videoUrl);
+    setGvVideoFile(null);
+    setGvDescription(gv.description);
+    setGvCredits(gv.credits);
+    setGvStatus(gv.status || 'active');
+    setFormError('');
+    setFormSuccess('');
+  };
+
+  const startAddGroomVideo = () => {
+    setEditingGroomVid(null);
+    setIsAddingGroomVid(true);
+    setGvTitle('');
+    setGvCategory('Sherwani');
+    setGvVideoUrlText('');
+    setGvVideoFile(null);
+    setGvDescription('Immersive cinematic video of our regal wear in elegant motion.');
+    setGvCredits('Featured Groom: bespoke atelier trial');
+    setGvStatus('active');
+    setFormError('');
+    setFormSuccess('');
+  };
+
   // --- SAVE & DELETE HANDLERS ---
   const CATEGORY_UNSPLASH_FALLBACKS: Record<string, string> = {
     'Sherwani': 'https://images.unsplash.com/photo-1621184455862-c163dfb30e0f?auto=format&fit=crop&q=82&w=800',
@@ -575,9 +620,106 @@ export default function AdminCRM({ onClose }: CRMProps) {
     );
   };
 
+  const handleSaveGroomVideo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gvTitle.trim()) {
+      setFormError('Video Title is required.');
+      return;
+    }
+
+    setFormError('');
+    setFormSuccess('');
+    setIsSavingGroomVid(true);
+
+    try {
+      const targetId = editingGroomVid ? editingGroomVid.id : `vid-${Date.now()}`;
+      let finalVidUrl = gvVideoUrlText.trim() || (editingGroomVid ? editingGroomVid.videoUrl : '');
+
+      if (gvVideoFile) {
+        try {
+          const downloadUrl = await uploadToStorage(`groom_videos/reels/${targetId}`, gvVideoFile);
+          finalVidUrl = downloadUrl;
+        } catch (uploadErr) {
+          console.warn('Firebase Storage groom video upload failed, falling back to session blob style...', uploadErr);
+          try {
+            finalVidUrl = URL.createObjectURL(gvVideoFile);
+          } catch (_) {
+            finalVidUrl = '';
+          }
+        }
+      }
+
+      if (!finalVidUrl) {
+        setFormError('Please select a video file or paste a secure Video URL (e.g. .mp4).');
+        setIsSavingGroomVid(false);
+        return;
+      }
+
+      const newVideo: GroomVideo = {
+        id: targetId,
+        title: gvTitle,
+        category: gvCategory,
+        description: gvDescription,
+        credits: gvCredits,
+        videoUrl: finalVidUrl,
+        views: editingGroomVid?.views || Math.floor(Math.random() * 400) + 600,
+        status: gvStatus
+      };
+
+      let updatedList: GroomVideo[];
+      if (editingGroomVid) {
+        updatedList = groomVideosList.map(v => v.id === targetId ? newVideo : v);
+        setFormSuccess('Groom Cinema video updated successfully!');
+      } else {
+        updatedList = [newVideo, ...groomVideosList];
+        setFormSuccess('New Groom Cinema Reel published live!');
+      }
+
+      await saveDynamicGroomVideos(updatedList);
+      setGroomVideosList(updatedList);
+      playRegalGoldChime();
+
+      setTimeout(() => {
+        setEditingGroomVid(null);
+        setIsAddingGroomVid(false);
+        setFormSuccess('');
+      }, 1500);
+
+    } catch (err: any) {
+      console.error(err);
+      setFormError(`Failed to save Groom Video: ${err?.message || err}`);
+    } finally {
+      setIsSavingGroomVid(false);
+    }
+  };
+
+  const handleDeleteGroomVideo = (id: string) => {
+    requestConfirm(
+      'Delete Groom Cinema Reel',
+      'Do you really want to delete this Groom Cinema Reel? This will remove it immediately from both the front-end user player and database logs.',
+      () => {
+        const updated = groomVideosList.filter(v => v.id !== id);
+        saveDynamicGroomVideos(updated);
+        setGroomVideosList(updated);
+        playRegalGoldChime();
+      }
+    );
+  };
+
+  const handleToggleGroomVideoStatus = (id: string, currentStatus?: 'active' | 'disabled') => {
+    const newStatus: 'active' | 'disabled' = currentStatus === 'disabled' ? 'active' : 'disabled';
+    const updated = groomVideosList.map(v => v.id === id ? { ...v, status: newStatus } : v);
+    saveDynamicGroomVideos(updated);
+    setGroomVideosList(updated);
+    playRegalGoldChime();
+  };
+
   // Custom persistent media states
   const [adminVideoBlob, setAdminVideoBlob] = useState<Blob | null>(null);
   const [adminVideoUrl, setAdminVideoUrl] = useState<string | null>(null);
+  const [logoVideoStatus, setLogoVideoStatus] = useState<'active' | 'disabled'>(() => {
+    return getCachedSetting('brand', 'brand_logo_video_status', 'active') as 'active' | 'disabled';
+  });
   const [mediaUploadSuccess, setMediaUploadSuccess] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -766,6 +908,18 @@ export default function AdminCRM({ onClose }: CRMProps) {
       handleFirestoreError(error, OperationType.GET, 'settings/lookbook');
     });
 
+    // 3.5. Subscribe to Groom Videos
+    const unsubscribeGroomVideos = onSnapshot(doc(db, 'settings', 'groom_videos'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.list)) {
+          setGroomVideosList(data.list as GroomVideo[]);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/groom_videos');
+    });
+
     // 4. Subscribe to Media Library
     const unsubscribeMedia = onSnapshot(collection(db, 'media'), (snapshot) => {
       const mediaList: MediaAsset[] = [];
@@ -840,6 +994,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
       unsubscribeBanners();
       unsubscribeCollections();
       unsubscribeLookbook();
+      unsubscribeGroomVideos();
       unsubscribeMedia();
       unsubscribeStaticPhotos();
     };
@@ -940,6 +1095,17 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const handleIntroDurationChange = async (duration: string) => {
     setIntroDuration(duration);
     await saveSetting('brand', { intro_duration: duration });
+  };
+
+  const handleUpdateLogoVideoStatus = async (status: 'active' | 'disabled') => {
+    try {
+      setLogoVideoStatus(status);
+      await saveSetting('brand', { brand_logo_video_status: status });
+      setMediaUploadSuccess(`Logo video status updated to: ${status === 'active' ? 'ENABLED / ACTIVE' : 'DISABLED / INACTIVE'}.`);
+      playRegalGoldChime();
+    } catch (err) {
+      console.error('Failed to save logo video status:', err);
+    }
   };
 
   const handlePurgeCache = async () => {
@@ -1740,6 +1906,17 @@ export default function AdminCRM({ onClose }: CRMProps) {
             🎬 Cinema
           </button>
 
+          <button
+            onClick={() => setCrmTab('reels')}
+            className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+              crmTab === 'reels'
+                ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
+            }`}
+          >
+            📹 Groom Videos ({groomVideosList.length})
+          </button>
+
           <div className="h-4 w-[1px] bg-white/10 hidden sm:block mx-0.5" />
 
           {/* Sitemap SEO Gen */}
@@ -2245,6 +2422,30 @@ export default function AdminCRM({ onClose }: CRMProps) {
                       </span>
                     </div>
                   )}
+                </div>
+
+                {/* Logo video active/disabled options */}
+                <div className="border-t border-white/5 pt-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-black/60 p-4 rounded border border-white/5">
+                    <div>
+                      <label className="block text-[10px] uppercase font-semibold text-amber-200 font-sans tracking-wider mb-1">
+                        Logo Video Status
+                      </label>
+                      <p className="text-gray-400 text-[10px] leading-relaxed max-w-xs sm:max-w-md">
+                        Choose whether the brand logo entrance cinematic video runs active or remains completely bypassed (falling back to the elegant gold CSS particle intro).
+                      </p>
+                    </div>
+                    <div>
+                      <select
+                        value={logoVideoStatus}
+                        onChange={(e) => handleUpdateLogoVideoStatus(e.target.value as 'active' | 'disabled')}
+                        className="bg-[#0A0A0A] border border-white/15 text-white text-xs p-2.5 rounded focus:outline-none focus:border-[#C5A85D] font-sans font-bold uppercase tracking-wider min-w-[170px]"
+                      >
+                        <option value="active">Active / Enabled</option>
+                        <option value="disabled">Disabled / Inactive</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="border-t border-white/5 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -3685,6 +3886,234 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
             </div>
 
+          </div>
+        ) : crmTab === 'reels' ? (
+          /* CINEMATIC GROOM VIDEOS / REELS WORKSPACE */
+          <div className="max-w-6xl mx-auto space-y-8" id="crm-groom-reels-pane">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-white/5 pb-4 mb-6">
+              <div>
+                <h3 className="font-display font-medium text-lg text-white tracking-widest uppercase mb-1">Groom Dynamic Video Reels Desk</h3>
+                <p className="text-gray-400 text-xs">Manage vertical motion walkthroughs, tailoring credits, and video loop files displayed on the webpage.</p>
+              </div>
+              <button
+                onClick={startAddGroomVideo}
+                className="mt-4 sm:mt-0 px-4 py-2 bg-gradient-to-r from-[#4A0E17] to-[#801423] border border-[#C5A85D]/30 text-white font-sans text-xs uppercase font-bold tracking-widest rounded shadow hover:scale-102 active:scale-98 transition-all cursor-pointer flex items-center space-x-1.5"
+              >
+                <span>Add Video Reel</span>
+              </button>
+            </div>
+
+            {/* Error or Success Feedback in Form */}
+            {(formError || formSuccess) && (
+              <div className="max-w-2xl mx-auto mb-6">
+                {formError && (
+                  <div className="p-3.5 bg-red-950/40 border border-red-500/20 text-red-200 text-xs rounded uppercase tracking-wider font-semibold">
+                    ⚠️ {formError}
+                  </div>
+                )}
+                {formSuccess && (
+                  <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/20 text-emerald-200 text-xs rounded uppercase tracking-wider font-semibold">
+                    ✓ {formSuccess}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Editing / Addition Form Section */}
+            {(isAddingGroomVid || editingGroomVid) && (
+              <div className="bg-[#121212] border border-[#C5A85D]/30 p-6 rounded-lg max-w-2xl mx-auto">
+                <h4 className="text-white font-sans text-xs uppercase font-bold tracking-widest text-[#C5A85D] mb-4 pb-2 border-b border-white/5">
+                  {editingGroomVid ? `Edit Video Reel: ${editingGroomVid.title}` : 'Publish New Groom Video'}
+                </h4>
+                <form onSubmit={handleSaveGroomVideo} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-gray-300 font-sans tracking-wide mb-1.5 font-semibold">Reel Title</label>
+                    <input
+                      type="text"
+                      value={gvTitle}
+                      onChange={(e) => setGvTitle(e.target.value)}
+                      placeholder="e.g. Royal Ivory Sherwani Grand Walk"
+                      className="w-full bg-[#0D0D0D] border border-white/10 text-white text-xs p-3 rounded focus:outline-none focus:border-[#C5A85D] font-sans"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-gray-300 font-sans tracking-wide mb-1.5 font-semibold">Category</label>
+                      <select
+                        value={gvCategory}
+                        onChange={(e) => setGvCategory(e.target.value)}
+                        className="w-full bg-[#0D0D0D] border border-white/10 text-white text-xs p-3 rounded focus:outline-none focus:border-[#C5A85D]"
+                      >
+                        <option value="Sherwani">Sherwani</option>
+                        <option value="Indo-Western">Indo-Western</option>
+                        <option value="Kurta-Pajama">Kurta-Pajama</option>
+                        <option value="Reception-Wear">Reception-Wear</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-gray-300 font-sans tracking-wide mb-1.5 font-semibold">Tailoring/Styling Credits</label>
+                      <input
+                        type="text"
+                        value={gvCredits}
+                        onChange={(e) => setGvCredits(e.target.value)}
+                        placeholder="e.g. Styled by Master Draper Jagdish"
+                        className="w-full bg-[#0D0D0D] border border-white/10 text-white text-xs p-3 rounded focus:outline-none focus:border-[#C5A85D] font-sans"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-gray-300 font-sans tracking-wide mb-1.5 font-semibold">Display Status</label>
+                      <select
+                        value={gvStatus}
+                        onChange={(e) => setGvStatus(e.target.value as 'active' | 'disabled')}
+                        className="w-full bg-[#0D0D0D] border border-white/10 text-white text-xs p-3 rounded focus:outline-none focus:border-[#C5A85D]"
+                      >
+                        <option value="active">Active / Enabled</option>
+                        <option value="disabled">Disabled / Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-gray-300 font-sans tracking-wide mb-1.5 font-semibold">Description Context (Credits & Tailoring Notes)</label>
+                    <textarea
+                      value={gvDescription}
+                      onChange={(e) => setGvDescription(e.target.value)}
+                      className="w-full bg-[#0D0D0D] border border-white/10 text-white text-xs p-3 rounded h-20 focus:outline-none focus:border-[#C5A85D] font-sans resize-none"
+                    />
+                  </div>
+
+                  <div className="p-4 bg-black/60 rounded border border-white/5 space-y-4">
+                    <h5 className="text-[10px] uppercase text-[#C5A85D] font-sans font-bold">Video Asset Source</h5>
+                    
+                    <div>
+                      <label className="block text-[9px] uppercase font-bold text-gray-400 font-sans tracking-wider mb-1">Direct Secure Video URL (.mp4 link)</label>
+                      <input
+                        type="text"
+                        value={gvVideoUrlText}
+                        onChange={(e) => setGvVideoUrlText(e.target.value)}
+                        placeholder="e.g. https://assets.mixkit.co/videos/preview/..."
+                        className="w-full bg-[#0A0A0A] border border-white/5 text-gray-300 text-xs p-2.5 rounded focus:outline-none focus:border-[#C5A85D] font-sans"
+                      />
+                    </div>
+
+                    <div className="flex items-center space-x-3 text-xs text-gray-500 font-sans font-semibold">
+                      <span className="h-[1px] flex-grow bg-white/5" />
+                      <span>OR UPLOAD LARGE FILE</span>
+                      <span className="h-[1px] flex-grow bg-white/5" />
+                    </div>
+
+                    <div>
+                      <label className="flex items-center justify-center p-4 border border-dashed border-white/10 rounded-lg hover:border-[#C5A85D]/60 hover:bg-white/5 transition-all cursor-pointer">
+                        <Upload className="w-4 h-4 text-gray-400 mr-2" />
+                        <span className="text-[11px] text-gray-400 font-semibold font-sans uppercase">
+                          {gvVideoFile ? `Selected: ${gvVideoFile.name}` : 'Select Video File (.mp4/.webm)'}
+                        </span>
+                        <input
+                          type="file"
+                          accept="video/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) setGvVideoFile(e.target.files[0]);
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end space-x-2 pt-4 border-t border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingGroomVid(null);
+                        setIsAddingGroomVid(false);
+                      }}
+                      className="px-4 py-2 border border-white/10 text-gray-400 hover:text-white uppercase font-sans tracking-widest text-[10px] font-bold rounded cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingGroomVid}
+                      className="px-5 py-2 bg-[#C5A85D] text-black hover:bg-[#D5B86D] uppercase font-sans tracking-widest text-[10px] font-bold rounded cursor-pointer disabled:opacity-50 font-semibold"
+                    >
+                      {isSavingGroomVid ? 'Saving assets...' : 'Publish Reel'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Current Video Reels Grid */}
+            <div className="space-y-4">
+              <h4 className="text-white font-sans text-xs uppercase font-bold tracking-widest text-amber-200">
+                Groom Cinema Video Reels ({groomVideosList.length})
+              </h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {groomVideosList.map((video) => {
+                  return (
+                    <div key={video.id} className="bg-[#121212] border border-white/5 hover:border-[#C5A85D]/30 rounded-lg p-4 flex flex-col justify-between transition-all">
+                      <div>
+                        {/* Interactive mini player screen inside Admin */}
+                        <div className="relative aspect-video rounded overflow-hidden bg-black border border-white/10 mb-3 group">
+                          <video
+                            src={video.videoUrl}
+                            muted
+                            controls
+                            playsInline
+                            className="w-full h-full object-cover"
+                          />
+                          
+                          {/* Visibility/Status Badge inside Admin */}
+                          <div className={`absolute top-2 left-2 px-2 py-0.5 text-[8px] font-sans font-bold uppercase tracking-wider rounded border backdrop-blur-md ${
+                            video.status === 'disabled'
+                              ? 'bg-red-950/90 text-red-400 border-red-500/30'
+                              : 'bg-emerald-950/90 text-emerald-400 border-emerald-500/30'
+                          }`}>
+                            {video.status === 'disabled' ? '● DISABLED' : '✓ ENABLED / ACTIVE'}
+                          </div>
+                        </div>
+                        <h5 className="text-white font-sans font-bold text-xs uppercase tracking-wider">{video.title}</h5>
+                        <p className="text-gray-400 text-[10px] mt-1 leading-normal line-clamp-2 italic">&ldquo;{video.description}&rdquo;</p>
+                        <span className="text-[9px] text-[#E5C46D] italic mt-1 pb-1.5 block font-serif">Credits: {video.credits}</span>
+                        <div className="mt-2.5 flex items-center justify-between text-[9px] font-mono text-gray-500 uppercase tracking-widest">
+                          <span>Category: {video.category}</span>
+                          <span>Views: {video.views || 0}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end space-x-2 mt-4 pt-2.5 border-t border-[#121212]">
+                        <button
+                          onClick={() => handleToggleGroomVideoStatus(video.id, video.status)}
+                          className={`px-2.5 py-1 text-[9px] font-sans font-bold uppercase tracking-wider rounded transition-all cursor-pointer border ${
+                            video.status === 'disabled'
+                              ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                              : 'border-amber-500/30 text-amber-500 hover:bg-amber-500/10'
+                          }`}
+                        >
+                          {video.status === 'disabled' ? 'Enable' : 'Disable'}
+                        </button>
+                        <button
+                          onClick={() => startEditGroomVideo(video)}
+                          className="px-2.5 py-1 text-[9px] font-sans font-bold uppercase tracking-wider border border-[#C5A85D]/40 text-[#C5A85D] hover:bg-[#C5A85D] hover:text-black rounded transition-all cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteGroomVideo(video.id)}
+                          className="px-2.5 py-1 text-[9px] font-sans font-bold uppercase tracking-wider bg-red-950/20 text-red-400 border border-red-500/20 hover:bg-red-900 hover:text-white rounded transition-all cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         ) : crmTab === 'analytics' ? (
           /* Robust analytics board with metrics cards */

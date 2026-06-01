@@ -10,6 +10,7 @@ import FullscreenHero from './components/FullscreenHero';
 import FeaturedCollections from './components/FeaturedCollections';
 import ConsultationSystem from './components/ConsultationSystem';
 import GroomLookbook from './components/GroomLookbook';
+import GroomVideos from './components/GroomVideos';
 import StoreLocations from './components/StoreLocations';
 import AdminCRM from './components/AdminCRM';
 import RecentInquiryPopup from './components/RecentInquiryPopup';
@@ -411,6 +412,10 @@ export default function App() {
 
         {activeView === 'lookbook' && (
           <GroomLookbook />
+        )}
+
+        {activeView === 'reels' && (
+          <GroomVideos />
         )}
 
         {activeView === 'upload' && (

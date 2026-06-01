@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CustomerLead, Appointment, ProductCollection, LookbookItem, StaticPhoto, StaticPhotoKey } from './types';
-import { COLLECTIONS, LOOKBOOK_GALLERY } from './data';
+import { CustomerLead, Appointment, ProductCollection, LookbookItem, StaticPhoto, StaticPhotoKey, GroomVideo } from './types';
+import { COLLECTIONS, LOOKBOOK_GALLERY, DEFAULT_GROOM_VIDEOS } from './data';
 import { collection, doc, setDoc, updateDoc, onSnapshot, getDoc, deleteDoc, getDocs, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, uploadToStorage, deleteFromStorage, parseCloudinaryUrlOrPath } from './firebase';
 
@@ -288,6 +288,9 @@ export const startLiveSync = () => {
     if (_settingsInMemory.lookbook && Array.isArray(_settingsInMemory.lookbook.list)) {
       window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: _settingsInMemory.lookbook.list }));
     }
+    if (_settingsInMemory.groom_videos && Array.isArray(_settingsInMemory.groom_videos.list)) {
+      window.dispatchEvent(new CustomEvent('varudu-groomvideos-updated', { detail: _settingsInMemory.groom_videos.list }));
+    }
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
       console.warn('Settings Sync Error:', error);
@@ -487,6 +490,25 @@ export const saveDynamicLookbook = (lookbook: LookbookItem[]): void => {
   window.dispatchEvent(new CustomEvent('varudu-lookbook-updated', { detail: lookbook }));
   saveSetting('lookbook', { list: lookbook }).catch(err => {
     console.warn('Failed to sync lookbook list with Firestore:', err);
+  });
+};
+
+export const getDynamicGroomVideos = (): GroomVideo[] => {
+  if (_settingsInMemory.groom_videos && Array.isArray(_settingsInMemory.groom_videos.list)) {
+    return _settingsInMemory.groom_videos.list;
+  }
+  return DEFAULT_GROOM_VIDEOS as GroomVideo[];
+};
+
+export const saveDynamicGroomVideos = (videos: GroomVideo[]): void => {
+  if (typeof window === 'undefined') return;
+  if (!_settingsInMemory.groom_videos) {
+    _settingsInMemory.groom_videos = {};
+  }
+  _settingsInMemory.groom_videos.list = videos;
+  window.dispatchEvent(new CustomEvent('varudu-groomvideos-updated', { detail: videos }));
+  saveSetting('groom_videos', { list: videos }).catch(err => {
+    console.warn('Failed to sync groom videos list with Firestore:', err);
   });
 };
 

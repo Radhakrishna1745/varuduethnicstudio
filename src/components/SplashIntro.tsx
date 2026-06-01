@@ -28,10 +28,16 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
     async function loadCustomVideo() {
       try {
         const firebaseVideoUrl = getCachedSetting('brand', 'brand_logo_video', '');
-        if (firebaseVideoUrl) {
+        const videoStatus = getCachedSetting('brand', 'brand_logo_video_status', 'active');
+        if (firebaseVideoUrl && videoStatus !== 'disabled') {
           if (active) {
             setVideoBlobUrl(firebaseVideoUrl);
             setHasVideo(true);
+          }
+        } else {
+          if (active) {
+            setVideoBlobUrl(null);
+            setHasVideo(false);
           }
         }
       } catch (err) {
@@ -70,10 +76,18 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
     const handleSettingsUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
       const settings = customEvent.detail;
-      if (settings && settings.brand && settings.brand.brand_logo_video) {
-        if (active) {
-          setVideoBlobUrl(settings.brand.brand_logo_video);
-          setHasVideo(true);
+      if (settings && settings.brand) {
+        const videoStatus = settings.brand.brand_logo_video_status || 'active';
+        if (settings.brand.brand_logo_video && videoStatus !== 'disabled') {
+          if (active) {
+            setVideoBlobUrl(settings.brand.brand_logo_video);
+            setHasVideo(true);
+          }
+        } else {
+          if (active) {
+            setVideoBlobUrl(null);
+            setHasVideo(false);
+          }
         }
       }
     };
