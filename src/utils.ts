@@ -241,20 +241,58 @@ export const deleteAppointment = (id: string): Appointment[] => {
   return updated;
 };
 
+// Initialize CRM default data in Firestore if empty
+export const initializeCRMData = async () => {
+  try {
+    const stateDocRef = doc(db, 'settings', 'crm_status');
+    const stateDoc = await getDoc(stateDocRef);
+    let initialized = false;
+    if (stateDoc.exists()) {
+      initialized = !!stateDoc.data().initialized;
+    }
+
+    if (!initialized) {
+      // 1. Populate default leads if they do not exist
+      const leadsColRef = collection(db, 'leads');
+      const leadsSnap = await getDocs(leadsColRef);
+      if (leadsSnap.empty) {
+        for (const lead of MOCK_LEADS) {
+          await setDoc(doc(db, 'leads', lead.id), lead);
+        }
+      }
+
+      // 2. Populate default appointments if they do not exist
+      const apptsColRef = collection(db, 'appointments');
+      const apptsSnap = await getDocs(apptsColRef);
+      if (apptsSnap.empty) {
+        for (const appt of MOCK_APPOINTMENTS) {
+          await setDoc(doc(db, 'appointments', appt.id), appt);
+        }
+      }
+
+      // 3. Mark CRM as initialized
+      await setDoc(stateDocRef, { initialized: true });
+    }
+  } catch (error) {
+    console.warn('Silent CRM initialization check:', error);
+  }
+};
+
 // Start a live sync listener to receive real-time updates from Firebase
 export const startLiveSync = () => {
   if (typeof window === 'undefined') return () => {};
+
+  // Initialize defaults in background if empty
+  initializeCRMData();
 
   const unsubscribeLeads = onSnapshot(collection(db, 'leads'), (snapshot) => {
     const leads: CustomerLead[] = [];
     snapshot.forEach(docSnap => {
       leads.push(docSnap.data() as CustomerLead);
     });
-    if (leads.length > 0) {
-      leads.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      _leadsInMemory = leads;
-      window.dispatchEvent(new CustomEvent('varudu-lead-updated', { detail: leads }));
-    }
+    leads.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    _leadsInMemory = leads;
+    window.dispatchEvent(new CustomEvent('varudu-lead-updated', { detail: leads }));
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
       console.warn('Leads Sync Error:', error);
@@ -266,11 +304,9 @@ export const startLiveSync = () => {
     snapshot.forEach(docSnap => {
       appts.push(docSnap.data() as Appointment);
     });
-    if (appts.length > 0) {
-      appts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      _appointmentsInMemory = appts;
-      window.dispatchEvent(new CustomEvent('varudu-appointment-updated', { detail: appts }));
-    }
+    appts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    _appointmentsInMemory = appts;
+    window.dispatchEvent(new CustomEvent('varudu-appointment-updated', { detail: appts }));
   }, (error) => {
     if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
       console.warn('Appointments Sync Error:', error);

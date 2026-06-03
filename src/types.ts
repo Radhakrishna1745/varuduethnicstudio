@@ -19,6 +19,7 @@ export interface CustomerLead {
   uploadedImages: string[];
   adminNotes?: string;
   whatsappSent?: boolean;
+  location?: string;
 }
 
 export interface Appointment {

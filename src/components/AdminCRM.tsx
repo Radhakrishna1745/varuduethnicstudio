@@ -39,7 +39,9 @@ interface CRMProps {
 }
 
 export default function AdminCRM({ onClose }: CRMProps) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('varudu_admin_authenticated') === 'true';
+  });
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState('');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -83,6 +85,10 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
   // Selected lead for photo inspection modal
   const [inspectedLead, setInspectedLead] = useState<CustomerLead | null>(null);
+
+  // State for specific delete lead safety confirmation modal
+  const [deleteLeadTarget, setDeleteLeadTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // --- DYNAMIC CATALOG & BLAZERS STATE ENGINE ---
   const [collectionsList, setCollectionsList] = useState<ProductCollection[]>(() => getDynamicCollections());
@@ -859,9 +865,12 @@ export default function AdminCRM({ onClose }: CRMProps) {
       if (user) {
         setCurrentUser(user);
         setIsAuthenticated(true);
+        localStorage.setItem('varudu_admin_authenticated', 'true');
       } else {
         setCurrentUser(null);
-        setIsAuthenticated(false);
+        if (localStorage.getItem('varudu_admin_authenticated') !== 'true') {
+          setIsAuthenticated(false);
+        }
       }
       setIsLoadingAuth(false);
     });
@@ -1097,7 +1106,11 @@ export default function AdminCRM({ onClose }: CRMProps) {
     await saveSetting('brand', { intro_duration: duration });
   };
 
-  const handleUpdateLogoVideoStatus = async (status: 'active' | 'disabled') => {
+  const handleUpdateLogoVideoStatus = async (status: 'active' | 'disabled' | 'remove') => {
+    if (status === 'remove') {
+      await handleClearMedia();
+      return;
+    }
     try {
       setLogoVideoStatus(status);
       await saveSetting('brand', { brand_logo_video_status: status });
@@ -1419,6 +1432,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
         
         setIsAuthenticated(true);
         setAuthError('');
+        localStorage.setItem('varudu_admin_authenticated', 'true');
         // Play soft gold chime as success cue
         playRegalGoldChime();
       } catch (err: any) {
@@ -1426,6 +1440,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
         // Fallback: Let them enter anyway to prevent lockouts, relying on browser local state
         setIsAuthenticated(true);
         setAuthError('');
+        localStorage.setItem('varudu_admin_authenticated', 'true');
         playRegalGoldChime();
       } finally {
         setIsAuthPending(false);
@@ -1454,6 +1469,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
       }
       setIsAuthenticated(true);
       setAuthError('');
+      localStorage.setItem('varudu_admin_authenticated', 'true');
       playRegalGoldChime();
     } catch (err: any) {
       console.error('Google SSO Handshake Failed:', err);
@@ -1469,6 +1485,8 @@ export default function AdminCRM({ onClose }: CRMProps) {
       setIsAuthenticated(false);
       setCurrentUser(null);
       setPasscode('');
+      localStorage.removeItem('varudu_admin_authenticated');
+      localStorage.removeItem('varudu_admin_crm_open');
       playRegalGoldChime();
     } catch (err) {
       console.error('Log out failed:', err);
@@ -1486,15 +1504,77 @@ export default function AdminCRM({ onClose }: CRMProps) {
   };
 
   const handleDeleteLead = (leadId: string, leadName: string) => {
-    requestConfirm(
-      'Delete Customer Lead',
-      `Are you sure you want to permanently delete the lead record for groom "${leadName}"? This action is irreversible.`,
-      () => {
-        const updated = deleteLead(leadId);
-        setLeads(updated);
-        playRegalGoldChime();
+    setDeleteLeadTarget({ id: leadId, name: leadName });
+    setDeleteConfirmText('');
+  };
+
+  const handleExportLeadsToCSV = () => {
+    const targetLeads = filteredLeads;
+    if (targetLeads.length === 0) {
+      showCustomAlert('Export Failed', 'There are no customer leads matching the current filter state to export.');
+      return;
+    }
+
+    const headers = [
+      'Lead ID',
+      'Groom Name',
+      'Phone Number',
+      'Email Address',
+      'Wedding Date',
+      'Location / City',
+      'Lead Status',
+      'Budget Tier',
+      'Occasion / Event',
+      'Preferred Colors',
+      'Preferred Styles',
+      'Internal Notes',
+      'Admin Curator Notes',
+      'Created Timestamp'
+    ];
+
+    const escapeCSV = (val: any) => {
+      if (val === null || val === undefined) return '';
+      let str = String(val);
+      str = str.replace(/"/g, '""');
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        str = `"${str}"`;
       }
-    );
+      return str;
+    };
+
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+
+    for (const lead of targetLeads) {
+      const row = [
+        lead.id,
+        lead.name,
+        lead.phone,
+        lead.email,
+        lead.weddingDate,
+        lead.location || '',
+        lead.status,
+        lead.budget,
+        lead.occasion || '',
+        (lead.preferredColors || []).join(' | '),
+        (lead.preferredStyles || []).join(' | '),
+        lead.notes || '',
+        lead.adminNotes || '',
+        lead.timestamp
+      ];
+      csvRows.push(row.map(escapeCSV).join(','));
+    }
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `varudu_grooms_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    playRegalGoldChime();
   };
 
   const handleDeleteAppointment = (apptId: string, clientName: string) => {
@@ -1969,6 +2049,92 @@ export default function AdminCRM({ onClose }: CRMProps) {
       {/* CRM Dynamic Content Area */}
       <main className="flex-1 overflow-y-auto bg-[#0A0A0A] p-6">
         
+        {/* At the top of the Admin CRM: Summary Dashboard Row */}
+        {(() => {
+          const nowMs = new Date().getTime();
+          const dayAgoMs = nowMs - 24 * 60 * 60 * 1000;
+          const dailyInquiriesCount = leads.filter(lead => {
+            if (!lead.timestamp) return false;
+            return new Date(lead.timestamp).getTime() >= dayAgoMs;
+          }).length;
+          const pendingAppointmentsCount = appointments.filter(appt => appt.status === 'Pending').length;
+          const totalLeadsCount = leads.length;
+
+          return (
+            <div className="max-w-7xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-3 gap-4" id="crm-summary-dashboard-cards">
+              {/* Card 1: Daily Inquiries */}
+              <div className="bg-[#121212]/80 border border-white/5 hover:border-[#C5A85D]/30 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start">
+                <div className="space-y-2">
+                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-500 font-bold block">
+                    Daily Inquiries (24h)
+                  </span>
+                  <div className="flex items-baseline space-x-2">
+                    <span className="text-3xl font-display font-medium text-white tracking-wider">
+                      {dailyInquiriesCount}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-mono">
+                      Incoming Grooms
+                    </span>
+                  </div>
+                  <p className="text-[10.5px] text-gray-400 font-serif leading-relaxed">
+                    New royal profiles registered in the database needing immediate styling curator assignment.
+                  </p>
+                </div>
+                <div className="p-3 bg-[#E5C46D]/5 border border-[#E5C46D]/10 rounded text-[#E5C46D] group-hover:bg-[#E5C46D]/10 group-hover:border-[#E5C46D]/30 transition-all">
+                  <Users className="w-5 h-5" />
+                </div>
+              </div>
+
+              {/* Card 2: Pending Consultations */}
+              <div className="bg-[#121212]/80 border border-white/5 hover:border-amber-500/30 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start">
+                <div className="space-y-2">
+                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-400 font-bold block flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse mr-1" />
+                    Pending Bookings
+                  </span>
+                  <div className="flex items-baseline space-x-2">
+                    <span className="text-3xl font-display font-medium text-amber-500 tracking-wider">
+                      {pendingAppointmentsCount}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-mono">
+                      Awaiting Action
+                    </span>
+                  </div>
+                  <p className="text-[10.5px] text-gray-400 font-serif leading-relaxed">
+                    Showroom appointment slots and trials awaiting confirmation from VARUDU head draper.
+                  </p>
+                </div>
+                <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded text-amber-500 group-hover:bg-amber-500/10 group-hover:border-amber-500/30 transition-all">
+                  <Calendar className="w-5 h-5" />
+                </div>
+              </div>
+
+              {/* Card 3: Total Client Base */}
+              <div className="bg-[#121212]/80 border border-white/5 hover:border-emerald-500/30 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start">
+                <div className="space-y-2">
+                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-400 font-bold block">
+                    Total Bridal Roster
+                  </span>
+                  <div className="flex items-baseline space-x-2">
+                    <span className="text-3xl font-display font-medium text-white tracking-wider">
+                      {totalLeadsCount}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-mono">
+                      Profiles Drafted
+                    </span>
+                  </div>
+                  <p className="text-[10.5px] text-gray-400 font-serif leading-relaxed">
+                    Total customized anatomical records and digital portfolios registered for premium styling.
+                  </p>
+                </div>
+                <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded text-emerald-400 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+        
         {crmTab === 'banners' ? (
           /* HOMEPAGE HERO BANNER CAROUSEL SLIDESHOW SCHEDULER */
           <div className="max-w-5xl mx-auto space-y-8 animate-fade-in" id="crm-banners-pane">
@@ -2438,11 +2604,12 @@ export default function AdminCRM({ onClose }: CRMProps) {
                     <div>
                       <select
                         value={logoVideoStatus}
-                        onChange={(e) => handleUpdateLogoVideoStatus(e.target.value as 'active' | 'disabled')}
+                        onChange={(e) => handleUpdateLogoVideoStatus(e.target.value as 'active' | 'disabled' | 'remove')}
                         className="bg-[#0A0A0A] border border-white/15 text-white text-xs p-2.5 rounded focus:outline-none focus:border-[#C5A85D] font-sans font-bold uppercase tracking-wider min-w-[170px]"
                       >
                         <option value="active">Active / Enabled</option>
                         <option value="disabled">Disabled / Inactive</option>
+                        <option value="remove">Remove / Delete Video</option>
                       </select>
                     </div>
                   </div>
@@ -3440,7 +3607,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
                         <div className="bg-black/40 border border-[#C5A85D]/20 p-4 rounded-lg flex flex-col justify-between hover:border-[#C5A85D] transition-all max-w-sm mx-auto shadow-xl">
                           <div>
-                            <div className="aspect-video bg-black/60 rounded mb-3 overflow-hidden relative border border-white/5 flex items-center justify-center text-[10px]">
+                            <div className="aspect-[3/4] max-h-[280px] w-full mx-auto bg-black/60 rounded mb-3 overflow-hidden relative border border-white/5 flex items-center justify-center text-[10px]">
                               {prodImgPreview ? (
                                 <img src={prodImgPreview} alt="Live preview img" className="w-full h-full object-cover object-top" />
                               ) : editingProduct && editingProduct.imageUrl ? (
@@ -3780,11 +3947,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
                     </button>
                   </div>
 
+                  {/* Performance advisory alert card */}
+                  <div className="bg-amber-500/5 border border-amber-500/15 p-4 rounded-lg text-gray-300 text-xs font-sans leading-relaxed max-w-4xl">
+                    <div className="flex items-center space-x-2 text-[#C5A85D] font-bold uppercase tracking-wider mb-1.5 text-[11px]">
+                      <span>🛡️ Digital Gallery Performance (Recommended Size)</span>
+                    </div>
+                    <p className="text-gray-400">
+                      To preserve the premium feel of the storefront and guarantee ultra-responsive page loads, we recommend keeping a curated catalog of <strong className="text-gray-200">50 to 150 elite items</strong> at any given time.
+                    </p>
+                    <p className="mt-2 text-[#C5A85D]/90">
+                      <strong>✨ Automatic Optimization Active:</strong> To support a large volume of creations, we have integrated an automatic <strong>Storefront Curated Chunking Grid (rendering 12 items at a time)</strong> with beautiful pagination. Visual load and background bandwidth are completely optimized for mobile networks.
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {collectionsList.map(item => (
                       <div key={item.id} className="bg-[#121212]/50 border border-white/5 p-4 rounded flex flex-col justify-between hover:border-[#C5A85D]/20 transition-all">
                         <div>
-                          <div className="aspect-video bg-black/60 rounded mb-3 overflow-hidden relative border border-white/5 flex items-center justify-center text-[10px]">
+                          <div className="aspect-[3/4] bg-black/60 rounded mb-3 overflow-hidden relative border border-white/5 flex items-center justify-center text-[10px]">
                             {item.imageUrl.startsWith('indexeddb:') ? (
                               <span className="text-[#C5A85D] font-mono">Custom photo loaded ✔</span>
                             ) : (
@@ -3842,11 +4022,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
                     </button>
                   </div>
 
+                  {/* Lookbook Performance advisory alert card */}
+                  <div className="bg-red-500/5 border border-red-500/15 p-4 rounded-lg text-gray-300 text-xs font-sans leading-relaxed max-w-4xl">
+                    <div className="flex items-center space-x-2 text-red-400 font-bold uppercase tracking-wider mb-1.5 text-[11px]">
+                      <span>🛡️ Editorial Performance & Portfolio Optimization</span>
+                    </div>
+                    <p className="text-gray-400">
+                      Masonry grids loading high-resolution photos can cause bandwidth overhead. We recommend keeping around <strong className="text-gray-200">50 to 120 curated lookbook captures</strong> live.
+                    </p>
+                    <p className="mt-2 text-amber-200 font-sans">
+                      <strong>✨ Active Safeguard:</strong> The storefront has been optimized to automatically <strong>load lookbook captures in chunks of 12</strong> with custom page-by-page reveal controls.
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {lookbookList.map(item => (
                       <div key={item.id} className="bg-[#121212]/50 border border-white/5 p-4 rounded flex flex-col justify-between hover:border-[#4A0E17]/20 transition-all">
                         <div>
-                          <div className="aspect-video bg-black/60 rounded mb-3 overflow-hidden relative border border-white/5 flex items-center justify-center text-[10px]">
+                          <div className="aspect-[3/4] bg-black/60 rounded mb-3 overflow-hidden relative border border-white/5 flex items-center justify-center text-[10px]">
                             {item.imageUrl.startsWith('indexeddb:') ? (
                               <span className="text-[#C5A85D] font-mono">Custom photo loaded ✔</span>
                             ) : (
@@ -4344,6 +4537,15 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   className="px-3.5 py-2 text-[10px] font-sans font-bold text-gray-500 border border-transparent hover:text-white transition-colors"
                 >
                   Reset filters
+                </button>
+
+                <button
+                  onClick={handleExportLeadsToCSV}
+                  className="flex items-center gap-1.5 px-3.5 py-2 text-[10px] uppercase font-sans font-bold text-[#C5A85D] border border-[#C5A85D]/20 hover:border-[#C5A85D] bg-[#C5A85D]/5 hover:bg-[#C5A85D]/10 rounded tracking-wider cursor-pointer transition-all"
+                  title="Export currently filtered grooms dataset to an offline CSV sheet"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Leads to CSV</span>
                 </button>
 
               </div>
@@ -4852,6 +5054,106 @@ export default function AdminCRM({ onClose }: CRMProps) {
           </div>
         </div>
       )}
+
+      {/* Sub-Modal: Safe Deletion Confirmation Dialog for Leads */}
+      <AnimatePresence>
+        {deleteLeadTarget && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 z-55"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-md bg-[#121212] border-2 border-red-500/50 rounded overflow-hidden shadow-2xl p-6 sm:p-8 space-y-6"
+            >
+              <button
+                onClick={() => {
+                  setDeleteLeadTarget(null);
+                  setDeleteConfirmText('');
+                }}
+                className="absolute top-4 right-4 p-2 bg-black border border-white/10 rounded-full text-gray-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 rounded-full border border-red-500/30 flex items-center justify-center mx-auto bg-red-400/5 animate-pulse">
+                  <AlertOctagon className="w-6 h-6 text-red-500" />
+                </div>
+                <h4 className="font-display font-medium text-base text-red-500 uppercase tracking-widest">
+                  Confirm Lead Deletion
+                </h4>
+                <p className="text-gray-400 text-[10px] font-sans tracking-wide uppercase">
+                  This action is irreversible and permanently erases customer data.
+                </p>
+              </div>
+
+              <div className="bg-red-500/5 border border-red-500/15 p-4 rounded text-gray-300 text-xs font-serif leading-relaxed space-y-2">
+                <p>
+                  You are about to permanently delete the profile of groom <strong className="text-white text-sans font-medium">{deleteLeadTarget.name}</strong>.
+                </p>
+                <p className="text-[11px] text-gray-400">
+                  All uploaded sketch files, follow-up briefs, showroom appointment inquiries, and contact metrics associated with this groom will be instantly lost.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase tracking-wider font-sans text-gray-400 block font-bold">
+                  Verification Request
+                </label>
+                <p className="text-[11px] text-gray-500 font-sans">
+                  To prevent accidental loss, please type <span className="text-red-400 font-mono font-bold">DELETE</span> in the box below:
+                </p>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type DELETE to verify"
+                  className="w-full px-4 py-2.5 bg-black border border-red-500/30 rounded text-sm text-white focus:outline-none focus:border-red-500 font-mono placeholder-gray-600 tracking-widest text-center"
+                />
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteLeadTarget(null);
+                    setDeleteConfirmText('');
+                  }}
+                  className="flex-1 py-3 border border-white/10 text-gray-400 hover:text-white text-[10px] uppercase font-sans tracking-widest hover:bg-white/5 transition-all cursor-pointer rounded font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteConfirmText.trim() !== 'DELETE'}
+                  onClick={() => {
+                    if (deleteConfirmText.trim() === 'DELETE') {
+                      const updated = deleteLead(deleteLeadTarget.id);
+                      setLeads(updated);
+                      playRegalGoldChime();
+                      setDeleteLeadTarget(null);
+                      setDeleteConfirmText('');
+                    }
+                  }}
+                  className={`flex-1 py-3 text-[10px] uppercase font-sans font-bold tracking-widest rounded transition-all flex items-center justify-center space-x-2 ${
+                    deleteConfirmText.trim() === 'DELETE'
+                      ? 'bg-red-500 hover:bg-red-600 cursor-pointer text-white shadow-lg shadow-red-500/20'
+                      : 'bg-red-950/20 text-red-500/40 border border-red-500/10 cursor-not-allowed'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Confirm Erase</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Custom Intercept Modal: Royal Confirmation Dialog */}
       <AnimatePresence>

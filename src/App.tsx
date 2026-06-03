@@ -69,7 +69,17 @@ export default function App() {
   const [selectedProductInquiry, setSelectedProductInquiry] = useState<string>('');
 
   // Lock admin CRM portal open state
-  const [isAdminCrmOpen, setIsAdminCrmOpen] = useState(false);
+  const [isAdminCrmOpen, setIsAdminCrmOpen] = useState(() => {
+    return localStorage.getItem('varudu_admin_crm_open') === 'true';
+  });
+
+  useEffect(() => {
+    if (isAdminCrmOpen) {
+      localStorage.setItem('varudu_admin_crm_open', 'true');
+    } else {
+      localStorage.removeItem('varudu_admin_crm_open');
+    }
+  }, [isAdminCrmOpen]);
 
   // High conversion urgency indicators
   const [vipSlotsLeft, setVipSlotsLeft] = useState(3);

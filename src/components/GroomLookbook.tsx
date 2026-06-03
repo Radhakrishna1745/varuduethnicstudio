@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Compass, Sparkles, X, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { Compass, Sparkles, X, ChevronLeft, ChevronRight, MessageSquare, ExternalLink } from 'lucide-react';
 import { getDynamicLookbook } from '../utils';
 import { IndexedAsset } from './FeaturedCollections';
 import { LookbookItem } from '../types';
@@ -15,6 +15,12 @@ export default function GroomLookbook() {
   const [activeCategory, setActiveCategory] = useState('All');
   const [fullscreenImageIndex, setFullscreenImageIndex] = useState<number | null>(null);
   const [lookbookItems, setLookbookItems] = useState<LookbookItem[]>(() => getDynamicLookbook());
+  const [lookbookLimit, setLookbookLimit] = useState<number>(12);
+
+  // Reset pagination count whenever category switches
+  useEffect(() => {
+    setLookbookLimit(12);
+  }, [activeCategory]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, 'settings', 'lookbook'), (docSnap) => {
@@ -90,46 +96,83 @@ export default function GroomLookbook() {
 
         {/* Masonry-like Grid Layout */}
         <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 space-y-6" id="lookbook-masonry-container">
-          {filteredItems.map((item, index) => (
-            <div
-              key={item.id}
-              onClick={() => setFullscreenImageIndex(index)}
-              className="break-inside-avoid relative overflow-hidden bg-[#121212] border border-white/5 rounded-lg group cursor-pointer shadow-lg transition-all duration-500 hover:border-[#C5A85D]/40"
-            >
-              {/* Image with zoom effect */}
-              <div className="overflow-hidden bg-black aspect-auto">
-                <IndexedAsset
-                  src={item.imageUrl}
-                  videoSrc={item.videoUrl}
-                  alt={item.title}
-                  className="w-full object-cover object-top transition-transform duration-700 group-hover:scale-104 group-hover:brightness-90"
-                />
-              </div>
-
-              {/* Hover content details strip */}
-              <div className="p-5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans font-semibold">
-                    {item.category.replace('-', ' ')}
-                  </span>
-                  <Compass className="w-3.5 h-3.5 text-[#C5A85D]/40 group-hover:text-[#C5A85D] transition-colors" />
+          {filteredItems.slice(0, lookbookLimit).map((item) => {
+            const realIndex = filteredItems.findIndex(fi => fi.id === item.id);
+            return (
+              <div
+                key={item.id}
+                onClick={() => setFullscreenImageIndex(realIndex)}
+                className="break-inside-avoid relative overflow-hidden bg-[#121212] border border-white/5 rounded-lg group cursor-pointer shadow-lg transition-all duration-500 hover:border-[#C5A85D]/40"
+              >
+                {/* Image with zoom effect */}
+                <div className="overflow-hidden bg-black aspect-[3/4]">
+                  <IndexedAsset
+                    src={item.imageUrl}
+                    videoSrc={item.videoUrl}
+                    alt={item.title}
+                    className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-104 group-hover:brightness-90"
+                  />
                 </div>
-                <h3 className="font-display font-medium text-base text-white tracking-widest mt-1.5 leading-tight group-hover:text-[#E5C46D] transition-colors">
-                  {item.title}
-                </h3>
-                <p className="font-serif text-xs text-gray-400 mt-2 leading-relaxed">
-                  {item.description}
-                </p>
-                <div className="border-t border-white/5 mt-3 pt-2.5 text-[10px] text-[#E5C46D]/80 font-sans tracking-wide uppercase italic">
-                  {item.credits}
-                </div>
-              </div>
 
-              {/* Hover card border shadow accents */}
-              <div className="absolute inset-0 border border-transparent group-hover:border-[#C5A85D]/20 duration-300 pointer-events-none rounded-lg" />
-            </div>
-          ))}
+                {/* Hover content details strip */}
+                <div className="p-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans font-semibold">
+                      {item.category.replace('-', ' ')}
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      <a
+                        href={item.imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded bg-black/60 border border-white/5 text-[#E5C46D] hover:scale-110 transition-all cursor-pointer hover:border-[#C5A85D]/30"
+                        title="Open high-res photo in new window"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                      <Compass className="w-3.5 h-3.5 text-[#C5A85D]/40 group-hover:text-[#C5A85D] transition-colors" />
+                    </div>
+                  </div>
+                  <h3 className="font-display font-medium text-base text-white tracking-widest mt-1.5 leading-tight group-hover:text-[#E5C46D] transition-colors">
+                    {item.title}
+                  </h3>
+                  <p className="font-serif text-xs text-gray-400 mt-2 leading-relaxed">
+                    {item.description}
+                  </p>
+                  <div className="border-t border-white/5 mt-3 pt-2.5 text-[10px] text-[#E5C46D]/80 font-sans tracking-wide uppercase italic">
+                    {item.credits}
+                  </div>
+                </div>
+
+                {/* Hover card border shadow accents */}
+                <div className="absolute inset-0 border border-transparent group-hover:border-[#C5A85D]/20 duration-300 pointer-events-none rounded-lg" />
+              </div>
+            );
+          })}
         </div>
+
+        {/* Lookbook Curated Pagination Controller */}
+        {filteredItems.length > 12 && (
+          <div className="flex flex-col items-center justify-center mt-12 pt-10 border-t border-white/5">
+            <p className="text-[10px] uppercase tracking-[0.20em] font-sans text-gray-400 mb-4 font-bold">
+              Curated Lookbook: <span className="text-[#E5C46D] font-mono">{Math.min(lookbookLimit, filteredItems.length)}</span> of <span className="text-[#E5C46D] font-mono">{filteredItems.length}</span> Editorial Captures
+            </p>
+            {lookbookLimit < filteredItems.length ? (
+              <button
+                onClick={() => setLookbookLimit(prev => prev + 12)}
+                className="px-8 py-3.5 bg-gradient-to-r from-[#121212] to-[#1a1a1a] hover:from-[#4A0E17] hover:to-[#5c1620] border border-[#C5A85D]/45 text-[#E5C46D] hover:text-white font-sans text-[11px] uppercase tracking-[0.25em] font-bold rounded shadow-lg hover:shadow-[#4A0E17]/20 transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer flex items-center space-x-2"
+              >
+                <span>Reveal More Lookbook Portraits</span>
+                <span className="text-xs">✦</span>
+              </button>
+            ) : (
+              <p className="text-xs font-serif italic text-gray-500">
+                You have browsed the entire elite catalog of transformations.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Infinite zoom Fullscreen Swiper Modal */}
@@ -164,15 +207,25 @@ export default function GroomLookbook() {
 
           {/* Slider Content Wrapper */}
           <div className="max-w-4xl w-full flex flex-col justify-center items-center" id="lookbook-fullscreen-panel">
-            <div className="relative max-h-[70vh] sm:max-h-[80vh] overflow-hidden rounded border border-[#C5A85D]/30 shadow-2xl">
+            <a
+              href={currentImageObj.imageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative max-h-[70vh] sm:max-h-[80vh] overflow-hidden rounded border border-[#C5A85D]/30 shadow-2xl block cursor-zoom-in group/swiperlook"
+              title="Click/Touch to view full high-res photo in a new window"
+            >
               <IndexedAsset
                 src={currentImageObj.imageUrl}
                 videoSrc={currentImageObj.videoUrl}
                 alt={currentImageObj.title}
-                className="max-h-[70vh] sm:max-h-[80vh] object-contain mx-auto"
+                className="max-h-[70vh] sm:max-h-[80vh] object-contain mx-auto transition-transform duration-500 group-hover/swiperlook:scale-101"
                 isBackgroundLoop={true}
               />
-            </div>
+              <div className="absolute bottom-3 left-3 bg-black/75 border border-[#C5A85D]/30 text-white text-[9px] px-2.5 py-1 rounded flex items-center space-x-1.5 font-sans">
+                <ExternalLink className="w-3 h-3 text-[#E5C46D]" />
+                <span className="uppercase tracking-wider font-semibold text-[8px] text-amber-200">Open High-Res Photo</span>
+              </div>
+            </a>
 
             {/* Editorial Footer Details overlay */}
             <div className="text-center mt-6 max-w-2xl px-4">

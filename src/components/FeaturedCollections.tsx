@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ProductCollection, GroomVideo } from '../types';
-import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film, Heart, Share2, ChevronLeft, ChevronRight, Volume2, VolumeX, Eye } from 'lucide-react';
+import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film, Heart, Share2, ChevronLeft, ChevronRight, Volume2, VolumeX, Eye, ExternalLink } from 'lucide-react';
 import { getDynamicCollections, incrementCollectionViews, getDynamicGroomVideos } from '../utils';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { onSnapshot, doc } from 'firebase/firestore';
@@ -95,6 +95,14 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
 
   // Sharing copy notification toast state
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+
+  // Curated Pagination (reduces initial payload burden for ultra-fast load times)
+  const [visibleCount, setVisibleCount] = useState<number>(12);
+
+  // Reset pagination count whenever category switches
+  useEffect(() => {
+    setVisibleCount(12);
+  }, [activeCategory]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, 'settings', 'collections'), (docSnap) => {
@@ -310,13 +318,13 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
               </div>
             ))
           ) : (
-            filteredProducts.map((product) => (
+            filteredProducts.slice(0, visibleCount).map((product) => (
               <div
                 key={product.id}
                 className="group bg-[#121212] border border-[#C5A85D]/15 hover:border-[#C5A85D]/40 rounded overflow-hidden flex flex-col justify-between transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_8px_30px_rgb(229,196,109,0.05)] relative"
               >
                 {/* Product Visual Container with hover zooms */}
-                <div className="relative h-[380px] overflow-hidden bg-black cursor-pointer" onClick={() => handleInspectProduct(product)}>
+                <div className="relative aspect-[3/4] w-full overflow-hidden bg-black cursor-pointer" onClick={() => handleInspectProduct(product)}>
                   <IndexedAsset
                     src={product.imageUrl}
                     videoSrc={product.videoUrl}
@@ -333,6 +341,16 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
 
                   {/* Heart wishlist top right */}
                   <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
+                    <a
+                      href={product.imageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-2 rounded-full bg-black/80 hover:bg-black border border-white/5 text-[#E5C46D] hover:scale-110 transition-all cursor-pointer backdrop-blur-sm"
+                      title="Open high-res photo in a new window"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
                     <button
                       onClick={(e) => toggleWishlist(product.id, e)}
                       className="p-2 rounded-full bg-black/80 hover:bg-black border border-white/5 text-[#E5C46D] hover:scale-110 transition-all cursor-pointer backdrop-blur-sm"
@@ -426,6 +444,28 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
           )}
         </div>
 
+        {/* Curated Pagination Control for ultra responsive loading */}
+        {activeCategory !== 'Royal Reels 📹' && filteredProducts.length > 12 && (
+          <div className="flex flex-col items-center justify-center mt-12 pt-10 border-t border-white/5">
+            <p className="text-[10px] uppercase tracking-[0.20em] font-sans text-gray-400 mb-4 font-bold">
+              Curated View: <span className="text-[#E5C46D] font-mono">{Math.min(visibleCount, filteredProducts.length)}</span> of <span className="text-[#E5C46D] font-mono">{filteredProducts.length}</span> Masterpieces
+            </p>
+            {visibleCount < filteredProducts.length ? (
+              <button
+                onClick={() => setVisibleCount(prev => prev + 12)}
+                className="px-8 py-3.5 bg-gradient-to-r from-[#121212] to-[#1a1a1a] hover:from-[#C5A85D] hover:to-[#E5C46D] border border-[#C5A85D]/30 text-[#E5C46D] hover:text-black font-sans text-[11px] uppercase tracking-[0.25em] font-bold rounded shadow-lg hover:shadow-[#C5A85D]/10 transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer flex items-center space-x-2"
+              >
+                <span>View More Curated Outfits</span>
+                <span className="text-xs">⚔</span>
+              </button>
+            ) : (
+              <p className="text-xs font-serif italic text-gray-500">
+                You have explored all live looks in this registry. Contact Varudu to craft customized outfits.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Row of Dynamic Reels underneath the Collections grid */}
         {activeCategory !== 'Royal Reels 📹' && groomVideos.length > 0 && (
           <div className="mt-20 pt-16 border-t border-[#C5A85D]/10" id="collections-groom-cinema-showcase">
@@ -501,27 +541,49 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
                 
                 {/* Image side with Multi-Image Carousel */}
                 <div className="flex flex-col space-y-4">
-                  <div className="relative h-[300px] sm:h-[400px] overflow-hidden rounded border border-white/5 bg-black">
+                  <a
+                    href={carouselImages[activeImageIndex]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="relative aspect-[3/4] max-h-[520px] w-full overflow-hidden rounded border border-white/5 bg-black block cursor-zoom-in group/specimg"
+                    title="Click/Touch to view full high-res photo in a new window"
+                  >
                     <IndexedAsset
                       src={carouselImages[activeImageIndex]}
                       videoSrc={activeImageIndex === 0 ? selectedProduct.videoUrl : undefined}
                       alt={selectedProduct.name}
-                      className="w-full h-full object-cover object-top transition-all duration-300"
+                      className="w-full h-full object-cover object-top transition-all duration-300 group-hover/specimg:scale-102"
                       isBackgroundLoop={true}
                     />
                     
+                    {/* Floating hint */}
+                    <div className="absolute bottom-3 left-3 bg-black/75 border border-[#C5A85D]/30 text-white text-[9px] px-2.5 py-1 rounded flex items-center space-x-1.5 font-sans z-10">
+                      <ExternalLink className="w-3 h-3 text-[#E5C46D]" />
+                      <span className="uppercase tracking-wider font-semibold text-[8px] text-amber-200">View in New Window</span>
+                    </div>
+
                     {/* Carousel Prev/Next Buttons */}
                     {carouselImages.length > 1 && (
                       <>
                         <button
-                          onClick={() => setActiveImageIndex(prev => (prev - 1 + carouselImages.length) % carouselImages.length)}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 p-1.5 bg-black/75 hover:bg-black rounded-full text-white hover:text-[#C5A85D] border border-white/10 cursor-pointer transition-all z-10"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setActiveImageIndex(prev => (prev - 1 + carouselImages.length) % carouselImages.length);
+                          }}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-black/80 hover:bg-black rounded-full text-white hover:text-[#C5A85D] border border-white/10 cursor-pointer transition-all z-20"
                         >
                           <ChevronLeft className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => setActiveImageIndex(prev => (prev + 1) % carouselImages.length)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 bg-black/75 hover:bg-black rounded-full text-white hover:text-[#C5A85D] border border-white/10 cursor-pointer transition-all z-10"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setActiveImageIndex(prev => (prev + 1) % carouselImages.length);
+                          }}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-black/80 hover:bg-black rounded-full text-white hover:text-[#C5A85D] border border-white/10 cursor-pointer transition-all z-20"
                         >
                           <ChevronRight className="w-4 h-4" />
                         </button>
@@ -529,7 +591,7 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
                     )}
 
                     <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black to-transparent pointer-events-none" />
-                  </div>
+                  </a>
 
                   {/* Multi-Image Thumbnails Scroller Row */}
                   {carouselImages.length > 1 && (
