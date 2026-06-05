@@ -137,7 +137,7 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
       <div className="w-full flex items-center justify-between px-6 py-4 border-b border-gray-100 relative z-30">
         <div className="flex items-center space-x-2 text-[10px] uppercase font-sans font-medium tracking-[0.2em] text-gray-400">
           <Film className="w-4 h-4 text-[#C5A85D] animate-pulse" />
-          <span>VARUDU CINEMATIC ENTRY</span>
+          <span>VARUDU STUDIO ENTRY</span>
         </div>
         <button
           onClick={handleFinished}

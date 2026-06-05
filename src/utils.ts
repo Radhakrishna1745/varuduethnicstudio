@@ -255,6 +255,22 @@ export const deleteLead = (id: string): CustomerLead[] => {
   return updated;
 };
 
+export const deleteMultipleLeads = (ids: string[]): CustomerLead[] => {
+  const leads = getStoredLeads();
+  const updated = leads.filter(l => !ids.includes(l.id));
+  _leadsInMemory = updated;
+
+  // Sync deletes to Firebase in parallel
+  ids.forEach(id => {
+    deleteDoc(doc(db, 'leads', id)).catch(error => {
+      handleFirestoreError(error, OperationType.DELETE, `leads/${id}`);
+    });
+  });
+
+  window.dispatchEvent(new CustomEvent('varudu-lead-updated'));
+  return updated;
+};
+
 export const deleteAppointment = (id: string): Appointment[] => {
   const appts = getStoredAppointments();
   const updated = appts.filter(a => a.id !== id);

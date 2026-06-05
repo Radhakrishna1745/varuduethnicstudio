@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner, StaticPhoto, StaticPhotoKey, GroomVideo } from '../types';
 import { 
-  getStoredLeads, updateLeadStatus, deleteLead,
+  getStoredLeads, updateLeadStatus, deleteLead, deleteMultipleLeads,
   getStoredAppointments, updateAppointmentStatus, deleteAppointment, updateAppointmentScanEvent,
   playRegalGoldChime,
   getDynamicCollections, saveDynamicCollections,
@@ -32,7 +32,7 @@ import {
   Users, Layers, Trash2, X, PlusCircle, Volume2, Shield, FileText, Check,
   Film, Play, VolumeX, Upload, HardDrive, AlertCircle, RefreshCw, Eye,
   BarChart3, ChevronLeft, ChevronRight, CalendarDays, CheckSquare, Globe, Heart, Share2, ToggleLeft, ToggleRight, Scissors, SlidersHorizontal,
-  QrCode, Camera
+  QrCode, Camera, Settings
 } from 'lucide-react';
 
 interface CRMProps {
@@ -88,6 +88,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [budgetFilter, setBudgetFilter] = useState<string>('All');
   const [branchFilter, setBranchFilter] = useState<string>('All');
+  const [apptStatusFilter, setApptStatusFilter] = useState<string>('All');
 
   // New lead real-time notification overlay
   const [liveLeadAlert, setLiveLeadAlert] = useState<CustomerLead | null>(null);
@@ -98,6 +99,13 @@ export default function AdminCRM({ onClose }: CRMProps) {
   // State for specific delete lead safety confirmation modal
   const [deleteLeadTarget, setDeleteLeadTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [showDeleteSettings, setShowDeleteSettings] = useState(false);
+  const [deleteVerificationMode, setDeleteVerificationMode] = useState<'strict' | 'simple' | 'instant'>(() => {
+    return (localStorage.getItem('varudu-delete-lead-mode') as any) || 'strict';
+  });
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState<boolean>(false);
+  const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState<string>('');
 
   // --- DYNAMIC CATALOG & BLAZERS STATE ENGINE ---
   const [collectionsList, setCollectionsList] = useState<ProductCollection[]>(() => getDynamicCollections());
@@ -1629,8 +1637,27 @@ export default function AdminCRM({ onClose }: CRMProps) {
   };
 
   const handleDeleteLead = (leadId: string, leadName: string) => {
+    if (deleteVerificationMode === 'instant') {
+      const updated = deleteLead(leadId);
+      setLeads(updated);
+      playRegalGoldChime();
+      return;
+    }
     setDeleteLeadTarget({ id: leadId, name: leadName });
     setDeleteConfirmText('');
+  };
+
+  const handleBulkDeleteLeads = () => {
+    if (selectedLeadIds.length === 0) return;
+    if (deleteVerificationMode === 'instant') {
+      const updated = deleteMultipleLeads(selectedLeadIds);
+      setLeads(updated);
+      setSelectedLeadIds([]);
+      playRegalGoldChime();
+      return;
+    }
+    setBulkDeleteConfirmation(true);
+    setBulkDeleteConfirmText('');
   };
 
   const handleExportLeadsToCSV = () => {
@@ -1869,8 +1896,9 @@ export default function AdminCRM({ onClose }: CRMProps) {
                           appt.branch.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesBranch = branchFilter === 'All' || appt.branch.includes(branchFilter);
+    const matchesStatus = apptStatusFilter === 'All' || appt.status === apptStatusFilter;
 
-    return matchesSearch && matchesBranch;
+    return matchesSearch && matchesBranch && matchesStatus;
   });
 
   // Analytics Metrics Gatherer
@@ -2108,7 +2136,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
                 : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
-            🎬 Cinema
+            🎬 Studio
           </button>
 
           <button
@@ -2188,13 +2216,22 @@ export default function AdminCRM({ onClose }: CRMProps) {
           return (
             <div className="max-w-7xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-3 gap-4" id="crm-summary-dashboard-cards">
               {/* Card 1: Daily Inquiries */}
-              <div className="bg-[#121212]/80 border border-white/5 hover:border-[#C5A85D]/30 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start">
+              <div 
+                onClick={() => {
+                  setCrmTab('leads');
+                  setSearchQuery('');
+                  setStatusFilter('New');
+                  setBudgetFilter('All');
+                }}
+                className="bg-[#121212]/80 border border-white/5 hover:border-[#C5A85D]/65 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                title="Click to view all New Daily Inquiries"
+              >
                 <div className="space-y-2">
-                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-500 font-bold block">
+                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-[#C5A85D] group-hover:text-[#E5C46D] font-bold block transition-colors">
                     Daily Inquiries (24h)
                   </span>
                   <div className="flex items-baseline space-x-2">
-                    <span className="text-3xl font-display font-medium text-white tracking-wider">
+                    <span className="text-3xl font-display font-medium text-white tracking-wider group-hover:text-[#E5C46D] transition-colors">
                       {dailyInquiriesCount}
                     </span>
                     <span className="text-[10px] text-zinc-500 font-mono">
@@ -2204,16 +2241,29 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   <p className="text-[10.5px] text-gray-400 font-serif leading-relaxed">
                     New royal profiles registered in the database needing immediate styling curator assignment.
                   </p>
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-[#C5A85D]/40 group-hover:text-[#C5A85D] transition-colors block pt-1">
+                    → Open New Inquiries
+                  </span>
                 </div>
-                <div className="p-3 bg-[#E5C46D]/5 border border-[#E5C46D]/10 rounded text-[#E5C46D] group-hover:bg-[#E5C46D]/10 group-hover:border-[#E5C46D]/30 transition-all">
+                <div className="p-3 bg-[#E5C46D]/5 border border-[#E5C46D]/10 rounded text-[#E5C46D] group-hover:bg-[#E5C46D]/10 group-hover:border-[#E5C46D]/50 transition-all">
                   <Users className="w-5 h-5" />
                 </div>
               </div>
 
               {/* Card 2: Pending Consultations */}
-              <div className="bg-[#121212]/80 border border-white/5 hover:border-amber-500/30 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start">
+              <div 
+                onClick={() => {
+                  setCrmTab('appointments');
+                  setAppointmentViewType('list');
+                  setSearchQuery('');
+                  setApptStatusFilter('Pending');
+                  setBranchFilter('All');
+                }}
+                className="bg-[#121212]/80 border border-white/5 hover:border-amber-500/65 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                title="Click to view all Pending showroom bookings"
+              >
                 <div className="space-y-2">
-                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-400 font-bold block flex items-center space-x-1">
+                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-400 group-hover:text-amber-400 font-bold block flex items-center space-x-1 transition-colors">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse mr-1" />
                     Pending Bookings
                   </span>
@@ -2228,20 +2278,32 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   <p className="text-[10.5px] text-gray-400 font-serif leading-relaxed">
                     Showroom appointment slots and trials awaiting confirmation from VARUDU head draper.
                   </p>
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-amber-500/40 group-hover:text-amber-500 transition-colors block pt-1">
+                    → Open Pending Bookings
+                  </span>
                 </div>
-                <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded text-amber-500 group-hover:bg-amber-500/10 group-hover:border-amber-500/30 transition-all">
+                <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded text-amber-500 group-hover:bg-amber-500/10 group-hover:border-amber-500/55 transition-all">
                   <Calendar className="w-5 h-5" />
                 </div>
               </div>
 
               {/* Card 3: Total Client Base */}
-              <div className="bg-[#121212]/80 border border-white/5 hover:border-emerald-500/30 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start">
+              <div 
+                onClick={() => {
+                  setCrmTab('leads');
+                  setSearchQuery('');
+                  setStatusFilter('All');
+                  setBudgetFilter('All');
+                }}
+                className="bg-[#121212]/80 border border-white/5 hover:border-emerald-500/65 p-5 rounded relative overflow-hidden transition-all duration-300 group shadow-md flex justify-between items-start cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                title="Click to view all active profiles"
+              >
                 <div className="space-y-2">
-                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-400 font-bold block">
+                  <span className="text-[10px] uppercase font-sans tracking-[0.2em] text-gray-400 group-hover:text-emerald-400 font-bold block transition-colors">
                     Total Bridal Roster
                   </span>
                   <div className="flex items-baseline space-x-2">
-                    <span className="text-3xl font-display font-medium text-white tracking-wider">
+                    <span className="text-3xl font-display font-medium text-white tracking-wider group-hover:text-emerald-400 transition-colors">
                       {totalLeadsCount}
                     </span>
                     <span className="text-[10px] text-zinc-500 font-mono">
@@ -2251,8 +2313,11 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   <p className="text-[10.5px] text-gray-400 font-serif leading-relaxed">
                     Total customized anatomical records and digital portfolios registered for premium styling.
                   </p>
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-emerald-500/40 group-hover:text-emerald-500 transition-colors block pt-1">
+                    → Open Bridal Roster
+                  </span>
                 </div>
-                <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded text-emerald-400 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded text-emerald-400 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/55 transition-all">
                   <BarChart3 className="w-5 h-5" />
                 </div>
               </div>
@@ -2580,7 +2645,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   Brand Identity Presence
                 </span>
                 <h3 className="font-display font-medium text-2xl text-white tracking-widest uppercase flex items-center space-x-2">
-                  <span>Varudu Bridal Cinema & Logo Customizer</span>
+                  <span>Varudu Bridal Studio & Logo Customizer</span>
                 </h3>
                 <p className="text-gray-300 text-xs sm:text-sm mt-3 leading-relaxed">
                   Varudu Ethnic Studio represents high-performance aesthetic majesty. By uploading your 7-second gold metallic animated logo video here, the website will automatically greeting all new clients with a stunning immersive fullscreen cinematic intro!
@@ -4673,8 +4738,204 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   <span>Export Leads to CSV</span>
                 </button>
 
+                <button
+                  onClick={() => setShowDeleteSettings(!showDeleteSettings)}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 text-[10px] uppercase font-sans font-bold border rounded tracking-wider cursor-pointer transition-all ${
+                    showDeleteSettings 
+                      ? 'bg-red-500/15 border border-red-500 text-red-400' 
+                      : 'border-red-500/35 text-red-500/80 hover:text-red-400 hover:border-red-500 bg-red-950/5 hover:bg-red-950/10'
+                  }`}
+                  title="Configure safe deletion verification modes and database actions"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Delete Settings</span>
+                </button>
+
               </div>
             </div>
+
+            {/* Collapsible Deletion Settings & Control Center Drawer */}
+            <AnimatePresence>
+              {showDeleteSettings && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden bg-[#1D0C0E]/60 border border-red-500/25 rounded-lg p-5 space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-red-500/10 pb-3 gap-2">
+                    <div className="flex items-center space-x-2.5">
+                      <AlertOctagon className="w-5 h-5 text-red-500 animate-pulse" />
+                      <div>
+                        <h4 className="text-white text-xs font-sans font-extrabold uppercase tracking-widest">
+                          Lead Deletion Configuration
+                        </h4>
+                        <p className="text-zinc-400 text-[10px] font-sans">
+                          Control protection guardrails, safety verification layers, or trigger system wipes.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 bg-red-500/10 text-red-400 rounded border border-red-500/20 select-none">
+                      Active Guardrail Status: {deleteVerificationMode.toUpperCase()}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1">
+                    {/* Column 1: Verification Guards Options */}
+                    <div className="space-y-3">
+                      <span className="text-[10px] uppercase font-sans tracking-widest font-bold text-gray-400 block">
+                        🔒 Verification Safety Levels
+                      </span>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        
+                        {/* Strict mode Option */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteVerificationMode('strict');
+                            localStorage.setItem('varudu-delete-lead-mode', 'strict');
+                          }}
+                          className={`p-3 rounded border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                            deleteVerificationMode === 'strict'
+                              ? 'bg-red-500/10 border-red-500 text-white shadow-md'
+                              : 'bg-black/40 border border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                          }`}
+                        >
+                          <span className="text-[10px] font-sans font-bold uppercase tracking-wider block mb-1">
+                            🔐 Strict Guard
+                          </span>
+                          <span className="text-[8.5px] leading-normal font-sans text-gray-400">
+                            Requires typing "DELETE" in uppercase to execute erasures. Highly recommended.
+                          </span>
+                        </button>
+
+                        {/* Simple mode Option */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteVerificationMode('simple');
+                            localStorage.setItem('varudu-delete-lead-mode', 'simple');
+                          }}
+                          className={`p-3 rounded border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                            deleteVerificationMode === 'simple'
+                              ? 'bg-amber-500/10 border-amber-500 text-white shadow-md'
+                              : 'bg-black/40 border border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                          }`}
+                        >
+                          <span className="text-[10px] font-sans font-bold uppercase tracking-wider block mb-1">
+                            ⚠️ Simple Mode
+                          </span>
+                          <span className="text-[8.5px] leading-normal font-sans text-gray-400">
+                            Provides simple pop-up action confirmation button without any manual typing check.
+                          </span>
+                        </button>
+
+                        {/* Instant mode Option */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteVerificationMode('instant');
+                            localStorage.setItem('varudu-delete-lead-mode', 'instant');
+                          }}
+                          className={`p-3 rounded border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                            deleteVerificationMode === 'instant'
+                              ? 'bg-[#4A0E17]/60 border border-red-500/60 text-white shadow-md'
+                              : 'bg-black/40 border border-white/5 text-gray-400 hover:text-white hover:border-white/10'
+                          }`}
+                        >
+                          <span className="text-[10px] font-sans font-bold text-red-450 uppercase tracking-wider block mb-1">
+                            ⚡ Instant Erase
+                          </span>
+                          <span className="text-[8.5px] leading-normal font-sans text-red-400/85">
+                            Bypasses all dialog prompts. Elements vanish immediately on clicking the delete button!
+                          </span>
+                        </button>
+
+                      </div>
+                    </div>
+
+                    {/* Column 2: Quick Dangerous Action Operations */}
+                    <div className="space-y-3 flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-sans tracking-widest font-bold text-[#C5A85D] block mb-2">
+                          ⚡ Bulk Operations Settings
+                        </span>
+                        <p className="text-[10.5px] text-gray-400 leading-relaxed font-serif">
+                          Need to start fresh or remove old records completely? Synchronize direct database operations cleanly. All wipes are absolute.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          onClick={handleWipeLeads}
+                          className="px-4 py-2 bg-red-950/20 border border-red-500/30 text-red-400 hover:text-white hover:bg-red-900 rounded font-sans text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center space-x-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Wipe All Lead Rosters</span>
+                        </button>
+
+                        <button
+                          onClick={() => setShowDeleteSettings(false)}
+                          className="px-4 py-2 bg-black border border-white/10 hover:border-white/25 text-gray-400 hover:text-white rounded font-sans text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer"
+                        >
+                          Minimize Settings
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Bulk Actions Bar */}
+            {filteredLeads.length > 0 && (
+              <div className="bg-[#121212]/50 border border-white/5 px-4 py-3 rounded-lg flex flex-wrap items-center justify-between gap-3 font-sans">
+                <div className="flex items-center space-x-3 text-xs">
+                  <label className="flex items-center space-x-2.5 cursor-pointer text-gray-300 select-none">
+                    <input
+                      type="checkbox"
+                      checked={filteredLeads.length > 0 && filteredLeads.every(lead => selectedLeadIds.includes(lead.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          // Select all visible filtered leads
+                          const allVisibleIds = filteredLeads.map(l => l.id);
+                          setSelectedLeadIds(prev => {
+                            const combined = [...prev, ...allVisibleIds];
+                            return Array.from(new Set(combined));
+                          });
+                        } else {
+                          // Deselect all visible filtered leads
+                          const visibleIdsSet = new Set(filteredLeads.map(l => l.id));
+                          setSelectedLeadIds(prev => prev.filter(id => !visibleIdsSet.has(id)));
+                        }
+                      }}
+                      className="w-3.5 h-3.5 rounded border-white/10 text-[#C5A85D] focus:ring-0 focus:ring-offset-0 bg-black cursor-pointer accent-[#C5A85D]"
+                    />
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-[#C5A85D]">
+                      Select All Visible ({filteredLeads.length})
+                    </span>
+                  </label>
+
+                  {selectedLeadIds.length > 0 && (
+                    <span className="text-[9px] uppercase tracking-wider text-gray-500 font-mono">
+                      | {selectedLeadIds.length} Selected
+                    </span>
+                  )}
+                </div>
+
+                {selectedLeadIds.length > 0 && (
+                  <button
+                    onClick={handleBulkDeleteLeads}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 text-[9px] uppercase font-sans font-extrabold text-red-400 border border-red-500/35 hover:border-red-500 bg-red-950/20 hover:bg-red-950/40 rounded tracking-wider cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    title="Bulk Delete all selected stale leads"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Bulk Delete selected ({selectedLeadIds.length})</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Leads List Grid */}
             <div className="space-y-4" id="leads-realtime-deck">
@@ -4692,6 +4953,22 @@ export default function AdminCRM({ onClose }: CRMProps) {
                       lead.status === 'Trial Scheduled' ? 'bg-amber-600' :
                       lead.status === 'Converted' ? 'bg-emerald-600' : 'bg-zinc-600'
                     }`} />
+
+                    {/* Pre-select row checkbox section */}
+                    <div className="flex items-center pl-2 shrink-0 select-none">
+                      <input
+                        type="checkbox"
+                        checked={selectedLeadIds.includes(lead.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedLeadIds(prev => [...prev, lead.id]);
+                          } else {
+                            setSelectedLeadIds(prev => prev.filter(id => id !== lead.id));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-white/20 text-[#C5A85D] focus:ring-0 focus:ring-offset-0 bg-black cursor-pointer accent-[#C5A85D] hover:border-[#C5A85D]/50 transition-colors"
+                      />
+                    </div>
 
                     {/* Left: Groom and wedding config elements */}
                     <div className="space-y-4 flex-1">
@@ -4879,6 +5156,17 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   <option value="All">All Showrooms</option>
                   <option value="Chaitanyapuri">Chaitanyapuri Studio</option>
                   <option value="Secunderabad">Secunderabad Lounge</option>
+                </select>
+
+                <select
+                  value={apptStatusFilter}
+                  onChange={(e) => setApptStatusFilter(e.target.value)}
+                  className="bg-black text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] border border-white/10 px-3 py-2 rounded focus:outline-none"
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Confirmed">Confirmed</option>
+                  <option value="Completed">Completed</option>
                 </select>
               </div>
             </div>
@@ -5499,21 +5787,27 @@ export default function AdminCRM({ onClose }: CRMProps) {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase tracking-wider font-sans text-gray-400 block font-bold">
-                  Verification Request
-                </label>
-                <p className="text-[11px] text-gray-500 font-sans">
-                  To prevent accidental loss, please type <span className="text-red-400 font-mono font-bold">DELETE</span> in the box below:
-                </p>
-                <input
-                  type="text"
-                  value={deleteConfirmText}
-                  onChange={(e) => setDeleteConfirmText(e.target.value)}
-                  placeholder="Type DELETE to verify"
-                  className="w-full px-4 py-2.5 bg-black border border-red-500/30 rounded text-sm text-white focus:outline-none focus:border-red-500 font-mono placeholder-gray-600 tracking-widest text-center"
-                />
-              </div>
+              {deleteVerificationMode === 'strict' ? (
+                <div className="space-y-2 animate-fade-in">
+                  <label className="text-[10px] uppercase tracking-wider font-sans text-gray-400 block font-bold">
+                    Verification Request
+                  </label>
+                  <p className="text-[11px] text-gray-500 font-sans">
+                    To prevent accidental loss, please type <span className="text-red-400 font-mono font-bold">DELETE</span> in the box below:
+                  </p>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type DELETE to verify"
+                    className="w-full px-4 py-2.5 bg-black border border-red-500/30 rounded text-sm text-white focus:outline-none focus:border-red-500 font-mono placeholder-gray-600 tracking-widest text-center"
+                  />
+                </div>
+              ) : (
+                <div className="p-3 bg-red-950/10 border border-red-500/10 text-center text-xs text-red-400/80 uppercase font-sans tracking-widest rounded select-none">
+                  ⚠️ Simple click verification active
+                </div>
+              )}
 
               <div className="flex space-x-3">
                 <button
@@ -5528,9 +5822,9 @@ export default function AdminCRM({ onClose }: CRMProps) {
                 </button>
                 <button
                   type="button"
-                  disabled={deleteConfirmText.trim() !== 'DELETE'}
+                  disabled={deleteVerificationMode === 'strict' && deleteConfirmText.trim() !== 'DELETE'}
                   onClick={() => {
-                    if (deleteConfirmText.trim() === 'DELETE') {
+                    if (deleteVerificationMode === 'simple' || deleteConfirmText.trim() === 'DELETE') {
                       const updated = deleteLead(deleteLeadTarget.id);
                       setLeads(updated);
                       playRegalGoldChime();
@@ -5539,13 +5833,120 @@ export default function AdminCRM({ onClose }: CRMProps) {
                     }
                   }}
                   className={`flex-1 py-3 text-[10px] uppercase font-sans font-bold tracking-widest rounded transition-all flex items-center justify-center space-x-2 ${
-                    deleteConfirmText.trim() === 'DELETE'
+                    deleteVerificationMode === 'simple' || deleteConfirmText.trim() === 'DELETE'
                       ? 'bg-red-500 hover:bg-red-600 cursor-pointer text-white shadow-lg shadow-red-500/20'
                       : 'bg-red-950/20 text-red-500/40 border border-red-500/10 cursor-not-allowed'
                   }`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Confirm Erase</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Sub-Modal: Safe Bulk Deletion Confirmation Dialog for Leads */}
+      <AnimatePresence>
+        {bulkDeleteConfirmation && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 z-55"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-md bg-[#121212] border-2 border-red-500/50 rounded overflow-hidden shadow-2xl p-6 sm:p-8 space-y-6"
+            >
+              <button
+                onClick={() => {
+                  setBulkDeleteConfirmation(false);
+                  setBulkDeleteConfirmText('');
+                }}
+                className="absolute top-4 right-4 p-2 bg-black border border-white/10 rounded-full text-gray-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 rounded-full border border-red-500/30 flex items-center justify-center mx-auto bg-red-400/5 animate-pulse">
+                  <AlertOctagon className="w-6 h-6 text-red-500" />
+                </div>
+                <h4 className="font-display font-medium text-base text-red-500 uppercase tracking-widest">
+                  Confirm Bulk Deletion
+                </h4>
+                <p className="text-gray-400 text-[10px] font-sans tracking-wide uppercase">
+                  Irreversible erase of multiple customer datasets.
+                </p>
+              </div>
+
+              <div className="bg-red-500/5 border border-red-500/15 p-4 rounded text-gray-300 text-xs font-serif leading-relaxed space-y-2">
+                <p>
+                  You are about to permanently delete <strong className="text-white text-sans font-medium">{selectedLeadIds.length}</strong> selected customer lead profiles.
+                </p>
+                <p className="text-[11px] text-gray-400">
+                  All associated custom sketches, notes briefs, and historical appointment trace records for these {selectedLeadIds.length} grooms will be instantly and permanently wiped from the database.
+                </p>
+              </div>
+
+              {deleteVerificationMode === 'strict' ? (
+                <div className="space-y-2 animate-fade-in">
+                  <label className="text-[10px] uppercase tracking-wider font-sans text-gray-400 block font-bold">
+                    Verification Request
+                  </label>
+                  <p className="text-[11px] text-gray-500 font-sans">
+                    To execute bulk purging, please type <span className="text-red-400 font-mono font-bold">DELETE</span> in the box below:
+                  </p>
+                  <input
+                    type="text"
+                    value={bulkDeleteConfirmText}
+                    onChange={(e) => setBulkDeleteConfirmText(e.target.value)}
+                    placeholder="Type DELETE to verify"
+                    className="w-full px-4 py-2.5 bg-black border border-red-500/30 rounded text-sm text-white focus:outline-none focus:border-red-500 font-mono placeholder-gray-600 tracking-widest text-center"
+                  />
+                </div>
+              ) : (
+                <div className="p-3 bg-red-950/10 border border-red-500/10 text-center text-xs text-red-400/80 uppercase font-sans tracking-widest rounded select-none">
+                  ⚠️ Simple click verification active
+                </div>
+              )}
+
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkDeleteConfirmation(false);
+                    setBulkDeleteConfirmText('');
+                  }}
+                  className="flex-1 py-3 border border-white/10 text-gray-400 hover:text-white text-[10px] uppercase font-sans tracking-widest hover:bg-white/5 transition-all cursor-pointer rounded font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteVerificationMode === 'strict' && bulkDeleteConfirmText.trim() !== 'DELETE'}
+                  onClick={() => {
+                    if (deleteVerificationMode === 'simple' || bulkDeleteConfirmText.trim() === 'DELETE') {
+                      const updated = deleteMultipleLeads(selectedLeadIds);
+                      setLeads(updated);
+                      playRegalGoldChime();
+                      setSelectedLeadIds([]);
+                      setBulkDeleteConfirmation(false);
+                      setBulkDeleteConfirmText('');
+                    }
+                  }}
+                  className={`flex-1 py-3 text-[10px] uppercase font-sans font-bold tracking-widest rounded transition-all flex items-center justify-center space-x-2 ${
+                    deleteVerificationMode === 'simple' || bulkDeleteConfirmText.trim() === 'DELETE'
+                      ? 'bg-red-500 hover:bg-red-600 cursor-pointer text-white shadow-lg shadow-red-500/20'
+                      : 'bg-red-950/20 text-red-500/40 border border-red-500/10 cursor-not-allowed'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Purge Selected ({selectedLeadIds.length})</span>
                 </button>
               </div>
             </motion.div>

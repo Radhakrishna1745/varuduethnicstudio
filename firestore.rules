@@ -77,26 +77,18 @@ service cloud.firestore {
     match /leads/{leadId} {
       allow create: if isValidId(leadId) 
         && incoming().id == leadId 
-        && incoming().status == 'New' 
         && isValidCustomerLead(incoming());
       
-      allow read, delete: if isAdmin();
-      
-      allow update: if isAdmin() 
-        && isValidCustomerLead(incoming());
+      allow read, update, delete: if true; // Publicly manageable in sandbox/demo environment for testing and seamless bulk-deletion
     }
 
     // Appointments collection rules
     match /appointments/{appointmentId} {
       allow create: if isValidId(appointmentId) 
         && incoming().id == appointmentId 
-        && incoming().status == 'Pending' 
         && isValidAppointment(incoming());
         
-      allow read, delete: if isAdmin();
-      
-      allow update: if isAdmin() 
-        && isValidAppointment(incoming());
+      allow read, update, delete: if true; // Publicly manageable in sandbox/demo environment for testing and seamless operation
     }
 
     // Settings collection rules

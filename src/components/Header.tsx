@@ -72,11 +72,11 @@ export default function Header({ activeView, setActiveView, openAdminLock, onRep
                   e.stopPropagation();
                   onReplaySplash();
                 }}
-                title="Play Cinematic Logo Intro"
+                title="Play Studio Logo Intro"
                 className="flex items-center space-x-1.5 px-3 py-1 font-sans text-[9px] font-bold uppercase tracking-widest bg-[#4A0E17]/80 text-[#E5C46D] border border-[#C5A85D]/30 rounded-full hover:bg-[#C5A85D] hover:text-black hover:border-transparent transition-all hover:scale-105 duration-300 cursor-pointer"
               >
                 <span className="animate-pulse">🎬</span>
-                <span className="hidden xs:inline">Cinema</span>
+                <span className="hidden xs:inline">Studio</span>
               </button>
             )}
           </div>

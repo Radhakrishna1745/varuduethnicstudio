@@ -36,7 +36,7 @@ import {
 import { 
   Sparkles, Calendar, MessageSquare, Phone, MapPin, 
   Clock, ShieldCheck, Star, ArrowRight, BookOpen, 
-  Heart, Check, Info, Award, Settings, UserCheck, X, Printer, Navigation, QrCode, Volume2, RefreshCw
+  Heart, Check, Info, Award, Settings, UserCheck, X, Printer, Navigation, QrCode, Volume2, RefreshCw, ExternalLink
 } from 'lucide-react';
 
 // Framer Motion Animation Variants for Staggered Appt Inputs
@@ -304,6 +304,174 @@ export default function App() {
       window.removeEventListener('varudu-appointment-updated', handleAppointmentsChange);
     };
   }, [apptSuccessTicket]);
+
+  const handleOpenTicketInNewWindow = () => {
+    if (!apptSuccessTicket) return;
+    playRegalGoldChime();
+
+    const qrDataStr = `VARUDU ATELIER RESERVATION\nID: ${apptSuccessTicket.id.replace('appt-', '')}\nGroom: ${apptSuccessTicket.customerName}\nPhone: ${apptSuccessTicket.customerPhone}\nLounge: ${apptSuccessTicket.branch}\nSlot: ${apptSuccessTicket.date} @ ${apptSuccessTicket.time}`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrDataStr)}`;
+
+    const newWindowString = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <title>Varudu Atelier Pass — #${apptSuccessTicket.id.replace('appt-', '')}</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+        <style>
+          body {
+            background-color: #060608;
+            color: #F5EFEB;
+            font-family: 'Inter', sans-serif;
+          }
+          .font-display {
+            font-family: 'Space Grotesk', sans-serif;
+          }
+          .font-serif {
+            font-family: 'Playfair Display', serif;
+          }
+          .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+          }
+          .gold-border {
+            border-color: rgba(197, 168, 93, 0.35);
+          }
+          @media print {
+            .no-print {
+              display: none !important;
+            }
+            body {
+              background-color: #FFFFFF !important;
+              color: #000000 !important;
+            }
+            .print-card {
+              border: 3px solid #000000 !important;
+              box-shadow: none !important;
+              background-color: #FFFFFF !important;
+              color: #000000 !important;
+              max-width: 100% !important;
+              margin: 0 !important;
+              padding: 2rem !important;
+            }
+            .print-text {
+              color: #000000 !important;
+            }
+            .print-text-muted {
+              color: #4b5563 !important;
+            }
+            .print-border {
+              border-color: #000000 !important;
+            }
+            .print-bg-light {
+              background-color: #f3f4f6 !important;
+            }
+          }
+        </style>
+      </head>
+      <body class="flex flex-col items-center justify-center min-h-screen p-4 sm:p-8 bg-[#060608]">
+        <div class="print-card max-w-lg w-full bg-[#121212] border-2 border-[#C5A85D] p-8 sm:p-10 rounded-xl text-center shadow-[0_0_50px_rgba(197,168,93,0.15)] relative overflow-hidden my-4">
+          
+          <div class="absolute top-3 left-3 w-4 h-4 border-t border-l border-[#C5A85D]/40 print-border"></div>
+          <div class="absolute top-3 right-3 w-4 h-4 border-t border-r border-[#C5A85D]/40 print-border"></div>
+          <div class="absolute bottom-3 left-3 w-4 h-4 border-b border-l border-[#C5A85D]/40 print-border"></div>
+          <div class="absolute bottom-3 right-3 w-4 h-4 border-b border-r border-[#C5A85D]/40 print-border"></div>
+
+          <div class="w-16 h-16 bg-[#4A0E17]/80 border-2 border-[#C5A85D]/50 flex items-center justify-center rounded-full mx-auto mb-6 shadow-inner print-border select-none">
+            <span class="text-[#E5C46D] font-serif font-semibold text-2xl tracking-tighter">V</span>
+          </div>
+
+          <h3 class="font-display font-bold text-xl text-white tracking-[0.18em] uppercase print-text">
+            Bespoke Entrance Pass
+          </h3>
+          <p class="text-[#C5A85D] text-[9px] tracking-[0.2em] uppercase font-mono mt-1 font-bold print-text-muted">
+            Varudu Atelier & Showroom Entry Gateway
+          </p>
+
+          <div class="w-16 h-[1.5px] bg-[#C5A85D]/35 mx-auto my-5 print-border" />
+
+          <div class="bg-black/40 border border-[#C5A85D]/20 rounded-md p-5 text-left text-xs tracking-wide space-y-3.5 text-gray-300 print-border print-bg-light">
+            <div class="border-b border-white/10 pb-2 print-border">
+              <span class="text-[9px] uppercase tracking-widest font-mono text-[#C5A85D] font-extrabold print-text">OFFICIAL ROYAL CREDENTIALS</span>
+            </div>
+            
+            <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03] print-border">
+              <strong class="text-zinc-500 font-sans uppercase text-[9px] tracking-wider print-text-muted">Groom Identity:</strong>
+              <span class="text-white font-bold ml-2 print-text">${apptSuccessTicket.customerName}</span>
+            </div>
+            
+            <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03] print-border">
+              <strong class="text-zinc-500 font-sans uppercase text-[9px] tracking-wider print-text-muted">Mobile Registry:</strong>
+              <span class="text-white font-mono ml-2 print-text">${apptSuccessTicket.customerPhone}</span>
+            </div>
+
+            <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03] print-border">
+              <strong class="text-zinc-500 font-sans uppercase text-[9px] tracking-wider print-text-muted">Atelier Studio:</strong>
+              <span class="text-[#E5C46D] font-bold ml-2 print-text">${apptSuccessTicket.branch}</span>
+            </div>
+
+            <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03] print-border">
+              <strong class="text-zinc-500 font-sans uppercase text-[9px] tracking-wider print-text-muted">Fitting Clock:</strong>
+              <span class="text-white font-bold ml-2 print-text">${apptSuccessTicket.date} at ${apptSuccessTicket.time}</span>
+            </div>
+
+            <div class="flex justify-between items-center py-0.5 print-border">
+              <strong class="text-zinc-500 font-sans uppercase text-[9px] tracking-wider print-text-muted">Registry Occasion:</strong>
+              <span class="text-white ml-2 print-text">${apptSuccessTicket.occasion}</span>
+            </div>
+
+            ${apptSuccessTicket.specialRequests ? `
+            <div class="border-t border-white/10 pt-3 mt-3 text-gray-400 print-border">
+              <strong class="text-[#C5A85D] text-[9px] uppercase font-mono tracking-widest block mb-1.5 print-text-muted">Bespoke Adjustments & Remarks:</strong>
+              <p class="text-zinc-300 italic font-serif leading-relaxed text-xs print-text">"${apptSuccessTicket.specialRequests}"</p>
+            </div>` : ''}
+          </div>
+
+          <div class="mt-6 p-5 bg-[#161618] border border-[#C5A85D]/20 rounded-lg flex flex-col items-center justify-center space-y-4 print-bg-light print-border">
+            <span class="text-[#C5A85D] font-mono text-[9px] tracking-widest uppercase font-bold print-text">
+              🔒 Dynamic Scan Desk Interface
+            </span>
+            <div class="p-3 bg-white rounded-md border border-[#C5A85D]/40 shadow-md">
+              <img src="${qrCodeUrl}" alt="Varudu QR Code" class="w-[140px] h-[140px] block" />
+            </div>
+            
+            <div class="w-full flex items-center justify-between border-t border-[#C5A85D]/10 pt-3 px-1 print-border">
+              <span class="text-[9px] text-[#C5A85D] tracking-widest uppercase font-mono font-bold print-text-muted">Interactive Desk Log:</span>
+              <span class="bg-black text-[#E5C46D] border border-[#C5A85D]/30 px-3 py-1 rounded text-[10px] font-mono font-black shadow print-bg-light print-text print-border">
+                Scanned Count: ${apptSuccessTicket.scanCount || 0}
+              </span>
+            </div>
+          </div>
+
+          <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 no-print">
+            <button onclick="window.print()" class="w-full sm:w-auto px-6 py-2.5 bg-[#C5A85D] hover:bg-[#E5C46D] text-black text-[10px] font-sans font-extrabold uppercase tracking-widest rounded-md shadow-md transition-all active:scale-[0.98] cursor-pointer">
+              Print Official Ticket
+            </button>
+            <button onclick="window.close()" class="w-full sm:w-auto px-6 py-2.5 bg-zinc-900 border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-white text-[10px] font-sans font-bold uppercase tracking-widest rounded-md transition-all cursor-pointer">
+              Close Window
+            </button>
+          </div>
+          
+        </div>
+      </body>
+      </html>
+    `;
+
+    try {
+      const livePassWindow = window.open("", "_blank");
+      if (livePassWindow) {
+        livePassWindow.document.write(newWindowString);
+        livePassWindow.document.close();
+      } else {
+        window.print();
+      }
+    } catch (e) {
+      console.warn("Popup blocked, calling standard print utility:", e);
+      window.print();
+    }
+  };
 
   const handleCustomReviewSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -754,33 +922,44 @@ export default function App() {
                       </div>
                     </div>
                     
-                    {/* QR Code Container with High-Contrast Quiet Zone */}
-                    <div className="qr-quiet-zone inline-block p-3.5 bg-white rounded-md border-2 border-[#C5A85D]/50 shadow-lg mx-auto relative">
+                    {/* QR Code Container with High-Contrast Quiet Zone - Clickable to open print pass details */}
+                    <div 
+                      onClick={handleOpenTicketInNewWindow}
+                      className="qr-quiet-zone inline-block p-3.5 bg-white rounded-md border-2 border-[#C5A85D]/50 shadow-lg mx-auto relative cursor-pointer hover:border-[#C5A85D] hover:scale-[1.03] transition-all group"
+                      title="Click directly to open live print pass details in a separate window"
+                    >
                       <img 
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
                           `VARUDU ATELIER RESERVATION\nID: ${apptSuccessTicket.id.replace('appt-', '')}\nGroom: ${apptSuccessTicket.customerName}\nPhone: ${apptSuccessTicket.customerPhone}\nLounge: ${apptSuccessTicket.branch}\nSlot: ${apptSuccessTicket.date} @ ${apptSuccessTicket.time}`
                         )}`} 
                         alt="Atelier Booking QR Code" 
-                        className="w-[140px] h-[140px] block transition-transform duration-300 hover:scale-[1.03]"
+                        className="w-[140px] h-[140px] block transition-transform duration-300 group-hover:scale-[1.01]"
                         referrerPolicy="no-referrer"
                       />
                       {/* Dynamic Scan Count Badge */}
-                      <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-[#C5A85D] text-black font-sans font-extrabold text-[9px] px-2.5 py-0.5 rounded shadow-[0_2px_8px_rgba(0,0,0,0.5)] border border-black uppercase tracking-widest whitespace-nowrap select-none">
+                      <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-[#C5A85D] text-black font-sans font-extrabold text-[9px] px-2.5 py-0.5 rounded shadow-[0_2px_8px_rgba(0,0,0,0.5)] border border-black uppercase tracking-widest whitespace-nowrap select-none group-hover:bg-[#E5C46D] transition-colors">
                         Scans: {apptSuccessTicket.scanCount || 0}
+                      </div>
+
+                      {/* Interactive click helper tooltip overlay */}
+                      <div className="absolute inset-0 bg-black/85 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center p-2 rounded text-center">
+                        <ExternalLink className="w-5 h-5 text-[#E5C46D] mb-1 animate-pulse" />
+                        <span className="text-[9px] text-[#E5C46D] font-sans font-extrabold uppercase tracking-widest leading-none">View Pass Details</span>
+                        <span className="text-[7px] text-gray-300 font-sans tracking-wide mt-0.5 uppercase">Separate Window</span>
                       </div>
                     </div>
 
                     {/* Interactive Action Control Center */}
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-3 no-print-element">
-                      {/* Majestic audio synchronization notice */}
-                      <div className="py-2 px-4 rounded border border-[#C5A85D]/20 bg-zinc-900/60 hover:bg-zinc-800 transition-all cursor-pointer flex items-center justify-center space-x-2 select-none"
-                           onClick={() => playRegalGoldChime()}>
-                        <Volume2 className="w-3.5 h-3.5 text-[#C5A85D] animate-pulse" />
-                        <div className="text-[9px] uppercase font-mono font-bold text-[#E5C46D] leading-none">
-                          <span>Chime Active</span>
-                          <span className="text-[8px] text-zinc-500 ml-1 font-sans">— Test Sound</span>
-                        </div>
-                      </div>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-3 no-print-element font-sans">
+                      {/* Open digital pass in external window */}
+                      <button
+                        type="button"
+                        onClick={handleOpenTicketInNewWindow}
+                        className="px-4 py-2.5 bg-[#C5A85D]/10 hover:bg-[#C5A85D]/25 hover:scale-[1.02] active:scale-[0.98] text-[9px] tracking-widest font-sans font-extrabold uppercase text-[#E5C46D] border border-[#C5A85D]/40 hover:border-[#C5A85D] rounded transition-all cursor-pointer flex items-center space-x-1.5 shadow-md"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-[#C5A85D]" />
+                        <span>Open Pass Window</span>
+                      </button>
 
                       {/* Manual Re-trigger Check-In Scan simulation hook */}
                       <button
@@ -796,9 +975,9 @@ export default function App() {
                             console.warn("Could not fire manual scan refresh:", e);
                           }
                         }}
-                        className="px-4 py-2 bg-[#C5A85D]/15 hover:bg-[#C5A85D]/25 hover:scale-[1.02] active:scale-[0.98] text-[9px] tracking-widest font-sans font-extrabold uppercase text-[#E5C46D] border border-[#C5A85D]/40 hover:border-[#C5A85D] rounded transition-all cursor-pointer flex items-center space-x-1.5 shadow-md"
+                        className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-850 hover:scale-[1.02] active:scale-[0.98] text-[9px] tracking-widest font-sans font-bold uppercase text-gray-300 border border-white/10 hover:border-white/20 rounded transition-all cursor-pointer flex items-center space-x-1.5 shadow-md"
                       >
-                        <RefreshCw className="w-3.5 h-3.5 text-[#C5A85D] hover:rotate-180 transition-transform duration-700" />
+                        <RefreshCw className="w-3.5 h-3.5 text-zinc-400 hover:rotate-180 transition-transform duration-700" />
                         <span>Re-Trigger Scan Event</span>
                       </button>
                     </div>
