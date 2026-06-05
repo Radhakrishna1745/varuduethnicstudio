@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner, StaticPhoto, StaticPhotoKey, GroomVideo } from '../types';
 import { 
   getStoredLeads, updateLeadStatus, deleteLead,
-  getStoredAppointments, updateAppointmentStatus, deleteAppointment,
+  getStoredAppointments, updateAppointmentStatus, deleteAppointment, updateAppointmentScanEvent,
   playRegalGoldChime,
   getDynamicCollections, saveDynamicCollections,
   getDynamicLookbook, saveDynamicLookbook,
@@ -31,7 +31,8 @@ import {
   Sparkles, CheckCircle, AlertOctagon, TrendingUp, DollarSign, Calendar, 
   Users, Layers, Trash2, X, PlusCircle, Volume2, Shield, FileText, Check,
   Film, Play, VolumeX, Upload, HardDrive, AlertCircle, RefreshCw, Eye,
-  BarChart3, ChevronLeft, ChevronRight, CalendarDays, CheckSquare, Globe, Heart, Share2, ToggleLeft, ToggleRight, Scissors, SlidersHorizontal
+  BarChart3, ChevronLeft, ChevronRight, CalendarDays, CheckSquare, Globe, Heart, Share2, ToggleLeft, ToggleRight, Scissors, SlidersHorizontal,
+  QrCode, Camera
 } from 'lucide-react';
 
 interface CRMProps {
@@ -73,6 +74,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [appointmentViewType, setAppointmentViewType] = useState<'list' | 'calendar'>('list');
   const [calendarDate, setCalendarDate] = useState<Date>(new Date());
+
+  // Atelier Digital QR scanner & Check-In tool states
+  const [qrRawInput, setQrRawInput] = useState('');
+  const [scannedAppointment, setScannedAppointment] = useState<Appointment | null>(null);
+  const [qrScanStatus, setQrScanStatus] = useState<'idle' | 'success' | 'not-found' | 'error'>('idle');
+  const [lastScannedPayload, setLastScannedPayload] = useState<string>('');
+  const [isQrCameraActive, setIsQrCameraActive] = useState(false);
+  const [isScanningLaser, setIsScanningLaser] = useState(false);
   
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -535,18 +544,26 @@ export default function AdminCRM({ onClose }: CRMProps) {
       let finalVidUrl = lkVidUrlText.trim() || (editingLookbook ? editingLookbook.videoUrl || '' : '');
 
       if (lkImgFile) {
+        let compressedFile = lkImgFile;
         try {
-          const downloadUrl = await uploadToStorage(`lookbook/images/${targetId}`, lkImgFile);
+          const compressedBlob = await compressImageBeforeUpload(lkImgFile, 1000, 1000, 0.75);
+          compressedFile = new File([compressedBlob], lkImgFile.name, { type: 'image/jpeg' });
+        } catch (compressErr) {
+          console.warn('Lookbook image compression failed, using original...', compressErr);
+        }
+
+        try {
+          const downloadUrl = await uploadToStorage(`lookbook/images/${targetId}`, compressedFile);
           finalImgUrl = downloadUrl;
         } catch (uploadErr) {
           console.warn('Firebase Storage lookbook upload failed, falling back to Base64/placeholder...', uploadErr);
-          if (lkImgFile.size < 400 * 1024) {
+          if (compressedFile.size < 400 * 1024) {
             try {
               const base64Url = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => resolve(reader.result as string);
                 reader.onerror = reject;
-                reader.readAsDataURL(lkImgFile);
+                reader.readAsDataURL(compressedFile);
               });
               finalImgUrl = base64Url;
             } catch (rErr) {
@@ -554,9 +571,20 @@ export default function AdminCRM({ onClose }: CRMProps) {
             }
           } else {
             try {
-              finalImgUrl = URL.createObjectURL(lkImgFile);
+              const compressedBlobFallback = await compressImageBeforeUpload(compressedFile, 600, 600, 0.6);
+              const base64UrlFallback = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(compressedBlobFallback);
+              });
+              finalImgUrl = base64UrlFallback;
             } catch (_) {
-              finalImgUrl = 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
+              try {
+                finalImgUrl = URL.createObjectURL(compressedFile);
+              } catch (__) {
+                finalImgUrl = 'https://images.unsplash.com/photo-1597176116047-876a32798fcc?auto=format&fit=crop&q=80&w=800';
+              }
             }
           }
         }
@@ -1501,6 +1529,103 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const handleApptStatusChange = (apptId: string, newStatus: Appointment['status']) => {
     const updated = updateAppointmentStatus(apptId, newStatus);
     setAppointments(updated);
+    
+    // Auto sync state if the scanned reservation corresponds to this updated appointment
+    if (scannedAppointment && scannedAppointment.id === apptId) {
+      setScannedAppointment(prev => prev ? { ...prev, status: newStatus } : null);
+    }
+  };
+
+  const handleProcessQRString = (rawText: string) => {
+    if (!rawText || !rawText.trim()) return;
+    
+    setQrRawInput('');
+    setLastScannedPayload(rawText);
+    setIsScanningLaser(true);
+    
+    // Simulate luxury laser scan progress
+    setTimeout(() => {
+      setIsScanningLaser(false);
+      
+      let parsedId = '';
+      
+      // Look for ID in text (e.g. "ID: appt-xxxxx" or "ID: xxxxx")
+      const idMatch = rawText.match(/ID:\s*([a-fA-F0-9\-]+)/i) || rawText.match(/Reference:\s*#([a-fA-F0-9\-]+)/i);
+      if (idMatch && idMatch[1]) {
+        parsedId = idMatch[1].trim();
+      }
+      
+      // Let's find matched appointment in state 'appointments' or via ID comparison
+      let match = appointments.find(appt => {
+        const apptIdClean = appt.id.replace('appt-', '').trim().toLowerCase();
+        const parsedIdClean = parsedId.replace('appt-', '').trim().toLowerCase();
+        return apptIdClean === parsedIdClean || appt.id.toLowerCase() === parsedId.toLowerCase() || appt.id.toLowerCase().includes(parsedIdClean);
+      });
+      
+      // If no match by ID is found, try match by Groom name or Phone
+      if (!match) {
+        const groomMatch = rawText.match(/Groom:\s*([^\n]+)/i);
+        const nameQuery = groomMatch ? groomMatch[1].trim() : '';
+        if (nameQuery) {
+          match = appointments.find(appt => appt.customerName.toLowerCase().includes(nameQuery.toLowerCase()));
+        }
+      }
+      
+      if (!match) {
+        const phoneMatch = rawText.match(/Phone:\s*([^\n]+)/i);
+        const phoneQuery = phoneMatch ? phoneMatch[1].trim() : '';
+        if (phoneQuery) {
+          const numberClean = phoneQuery.replace(/[^0-9]/g, '');
+          match = appointments.find(appt => {
+            const apptPhoneClean = appt.customerPhone.replace(/[^0-9]/g, '');
+            return apptPhoneClean.includes(numberClean) || numberClean.includes(apptPhoneClean);
+          });
+        }
+      }
+      
+      if (match) {
+        setScannedAppointment(match);
+        setQrScanStatus('success');
+        playRegalGoldChime();
+        // Trigger Live Scan Event to write scanned attributes (triggering sound feedback)
+        try {
+          const updatedAppts = updateAppointmentScanEvent(match.id);
+          setAppointments(updatedAppts);
+          const fresh = updatedAppts.find(a => a.id === match.id);
+          if (fresh) setScannedAppointment(fresh);
+        } catch (e) {
+          console.warn("Could not save live scan event timestamp:", e);
+        }
+      } else {
+        // Build a virtual profile so details are still visible even if it's not a saved record
+        const titleMatch = rawText.match(/Groom:\s*([^\n]+)/i);
+        const phoneMatch = rawText.match(/Phone:\s*([^\n]+)/i);
+        const loungeMatch = rawText.match(/Lounge:\s*([^\n]+)/i);
+        const slotMatch = rawText.match(/Slot:\s*([^\n]+)/i) || rawText.match(/at\s*([^\n]+)/i);
+        
+        if (titleMatch || phoneMatch || parsedId) {
+          const tempAppt: Appointment = {
+            id: parsedId ? (parsedId.startsWith('appt-') ? parsedId : `appt-${parsedId}`) : `appt-temp-${Date.now()}`,
+            customerName: titleMatch ? titleMatch[1].trim() : 'Guest Groom',
+            customerPhone: phoneMatch ? phoneMatch[1].trim() : 'unverified',
+            customerEmail: 'offline@varudu.in',
+            branch: loungeMatch ? loungeMatch[1].trim() : 'Main Atelier Lounge',
+            date: slotMatch ? slotMatch[1].split('@')[0]?.trim() || 'Selected Date' : 'Check Ticket',
+            time: slotMatch ? slotMatch[1].split('@')[1]?.trim() || slotMatch[1].trim() : 'Schedule Spot',
+            specialRequests: 'This QR reference was successfully decoded but does not match any current Firestore database record. Showing offline ticket metadata.',
+            status: 'Pending',
+            occasion: 'Wedding Wear Concierge',
+            timestamp: String(Date.now())
+          };
+          setScannedAppointment(tempAppt);
+          setQrScanStatus('success');
+          playRegalGoldChime();
+        } else {
+          setScannedAppointment(null);
+          setQrScanStatus('not-found');
+        }
+      }
+    }, 850);
   };
 
   const handleDeleteLead = (leadId: string, leadName: string) => {
@@ -4758,6 +4883,272 @@ export default function AdminCRM({ onClose }: CRMProps) {
               </div>
             </div>
 
+            {/* Dynamic Atelier Digital Scan Desk & QR Checker */}
+            <div className="bg-[#121212] border-2 border-[#C5A85D]/40 rounded-xl overflow-hidden shadow-2xl p-6 sm:p-8 space-y-6" id="atelier-qr-scan-desk">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-[#C5A85D]/10 pb-4 gap-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-[#C5A85D]/10 border border-[#C5A85D]/40 flex items-center justify-center rounded-lg">
+                    <QrCode className="w-5 h-5 text-[#C5A85D]" />
+                  </div>
+                  <div>
+                    <h4 className="font-display font-medium text-[#E5C46D] text-base tracking-widest uppercase">
+                      Front-Desk QR Scan Controller
+                    </h4>
+                    <p className="text-[10px] text-gray-400 font-sans uppercase tracking-[0.15em] mt-0.5">
+                      Retrieve Groom File & Live Fitting Specs in 1-Click
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 self-start md:self-auto">
+                  <button
+                    onClick={() => setIsQrCameraActive(!isQrCameraActive)}
+                    className={`px-3 py-1.5 text-[9px] uppercase font-sans tracking-widest font-bold border rounded transition-all flex items-center space-x-1.5 cursor-pointer ${
+                      isQrCameraActive 
+                        ? 'bg-red-500/10 text-red-000 hover:bg-red-500/15 border-red-500/30 text-red-400' 
+                        : 'bg-[#C5A85D]/10 text-[#C5A85D] hover:bg-[#C5A85D]/20 border-[#C5A85D]/30'
+                    }`}
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>{isQrCameraActive ? 'Close Camera Feed' : 'Open Camera Feed'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Camera Simulator or Gun Input Area */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Left Side: Inputs & Scanning Lasers */}
+                <div className="lg:col-span-7 space-y-4">
+                  {isQrCameraActive ? (
+                    /* High fidelity Webcam scan stream emulator */
+                    <div className="relative w-full aspect-video bg-[#0c0c0e] border border-white/10 rounded-lg overflow-hidden flex flex-col justify-between p-4">
+                      {/* Bounded Target Bracket outlines */}
+                      <div className="absolute top-6 left-6 w-8 h-8 border-t-2 border-l-2 border-[#C5A85D]" />
+                      <div className="absolute top-6 right-6 w-8 h-8 border-t-2 border-r-2 border-[#C5A85D]" />
+                      <div className="absolute bottom-6 left-6 w-8 h-8 border-b-2 border-l-2 border-[#C5A85D]" />
+                      <div className="absolute bottom-6 right-6 w-8 h-8 border-b-2 border-r-2 border-[#C5A85D]" />
+
+                      {/* Moving laser sweep overlay */}
+                      <div className="absolute inset-x-0 h-1 bg-[#C5A85D]/60 shadow-[0_0_12px_#E5C46D] animate-bounce top-[20%] z-10" />
+
+                      {/* Blinking camera active status */}
+                      <div className="z-10 inline-flex items-center self-start space-x-2 bg-[#4a0e17]/60 border border-red-500/25 px-2 py-0.5 rounded text-[8px] uppercase tracking-wider font-mono font-bold text-red-400">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+                        </span>
+                        <span>[WEB-CAM LIVE FEED: DECODING BEAM SENSORS]</span>
+                      </div>
+
+                      {/* QR Dummy graphic inside finder */}
+                      <div className="absolute inset-0 flex items-center justify-center opacity-25">
+                        <QrCode className="w-24 h-24 text-white animate-pulse" />
+                      </div>
+
+                      <div className="z-10 mt-auto bg-black/80 px-3 py-2 rounded text-[9px] font-sans text-gray-400 leading-normal border border-white/5 uppercase tracking-wide">
+                        💡 System rule: Point QR coupon directly at your front-facing device camera to parse.
+                      </div>
+                    </div>
+                  ) : (
+                    /* Decoded read controller & manual scanning fallback */
+                    <div className="bg-black/40 border border-white/5 p-4 rounded-lg space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] uppercase font-sans tracking-widest font-extrabold text-[#C5A85D]">
+                          Scanner Input / Clipboard Read
+                        </label>
+                        <span className="text-[9px] uppercase font-mono text-zinc-500">Auto-Detect Enabled</span>
+                      </div>
+                      
+                      <p className="text-[11px] text-gray-400 font-sans leading-relaxed">
+                        If using a physical USB Barcode scan gun or copying the ticket's QR data string, paste or type it in this box directly to instantly pull up measurements.
+                      </p>
+
+                      <div className="relative">
+                        <textarea
+                          rows={3}
+                          value={qrRawInput}
+                          onChange={(e) => {
+                            setQrRawInput(e.target.value);
+                            handleProcessQRString(e.target.value);
+                          }}
+                          placeholder={`Paste QR Scan read text here...\n(e.g., VARUDU ATELIER RESERVATION\nID: xyz\nGroom: ...)`}
+                          className="w-full bg-black border border-white/10 focus:border-[#C5A85D] p-3 text-xs font-mono rounded text-[#F5EFEB] placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#C5A85D]/30"
+                        />
+                        {isScanningLaser && (
+                          <div className="absolute inset-0 bg-[#C5A85D]/5 backdrop-blur-[1px] flex items-center justify-center border border-[#C5A85D] rounded">
+                            <span className="text-xs font-mono font-bold tracking-[0.2em] uppercase text-[#E5C46D] animate-pulse flex items-center space-x-2">
+                              <span className="inline-block w-2.5 h-2.5 bg-[#C5A85D] rounded-full animate-ping" />
+                              <span>Laser Decoding...</span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Simulator sandbox scanner controls */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] uppercase font-sans font-black tracking-widest text-[#C5A85D] block">
+                      ⚡ Quick-Click Simulation Sandbox
+                    </span>
+                    <p className="text-[11px] text-gray-400 font-sans leading-normal">
+                      Select one of our recorded VIP grooms to automatically compile their ticket credentials and simulate the scanners:
+                    </p>
+
+                    <div className="flex flex-wrap gap-2.5">
+                      {appointments.slice(0, 4).map((appt) => (
+                        <button
+                          type="button"
+                          key={appt.id}
+                          onClick={() => {
+                            const dummyPayload = `VARUDU ATELIER RESERVATION\nID: ${appt.id.replace('appt-', '')}\nGroom: ${appt.customerName}\nPhone: ${appt.customerPhone}\nLounge: ${appt.branch}\nSlot: ${appt.date} @ ${appt.time}`;
+                            handleProcessQRString(dummyPayload);
+                          }}
+                          className="bg-zinc-900 hover:bg-zinc-800 border-2 border-white/5 hover:border-[#C5A85D]/50 text-left px-3 py-2 rounded-lg text-xs transition-all cursor-pointer space-y-0.5 shrink-0 hover:scale-[1.03]"
+                        >
+                          <div className="text-[#E5C46D] font-display uppercase tracking-widest text-[8px] font-bold">
+                            #{appt.id.replace('appt-', '')} {appt.customerName.split(' ')[0]}
+                          </div>
+                          <div className="text-[9px] font-sans text-gray-400 uppercase tracking-wider">
+                            Simulate Scanning
+                          </div>
+                        </button>
+                      ))}
+                      {appointments.length === 0 && (
+                        <p className="text-[10px] text-[#C5A85D]/55 font-serif italic uppercase">
+                          No bookings recorded to simulate scans. Create a booking in the showroom designer reservation helper first.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Side: Decoded Result / Groom File */}
+                <div className="lg:col-span-5 flex">
+                  {qrScanStatus === 'success' && scannedAppointment ? (
+                    <motion.div 
+                      key={scannedAppointment.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="w-full bg-[#161618] border-2 border-[#C5A85D] rounded-lg p-5 flex flex-col justify-between space-y-4 relative overflow-hidden"
+                    >
+                      {/* Background branding crest watermark */}
+                      <div className="absolute top-4 right-4 opacity-[0.03] pointer-events-none">
+                        <QrCode className="w-32 h-32 text-[#C5A85D]" />
+                      </div>
+
+                      <div className="space-y-4 z-10 w-full text-left">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+                          <span className="text-[9px] uppercase tracking-widest font-mono text-[#C5A85D] font-extrabold flex items-center space-x-1">
+                            <span className="inline-block w-1.5 h-1.5 bg-[#C5A85D] rounded-full animate-ping mr-1" />
+                            <span>Groom Lookup Pass</span>
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest font-sans font-bold ${
+                            scannedAppointment.status === 'Confirmed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                            scannedAppointment.status === 'Completed' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                            'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                          }`}>
+                            {scannedAppointment.status}
+                          </span>
+                        </div>
+
+                        <div>
+                          <p className="text-[9px] uppercase font-sans tracking-widest text-[#E5C46D] font-medium leading-none">
+                            Booking ID: #{scannedAppointment.id.replace('appt-', '')}
+                          </p>
+                          <h5 className="font-display font-medium text-lg text-white uppercase tracking-widest mt-1">
+                            {scannedAppointment.customerName}
+                          </h5>
+                          <p className="text-[10px] text-gray-400 font-sans font-semibold">
+                            📞 Contact: {scannedAppointment.customerPhone}
+                          </p>
+                        </div>
+
+                        {/* Fitting and Lounge details */}
+                        <div className="bg-black/50 p-3 rounded-md space-y-1.5 border border-white/5">
+                          <div className="text-[9px] text-[#C5A85D] tracking-[0.14em] uppercase font-sans font-black">
+                            📍 Reserved Fitting Lounge
+                          </div>
+                          <div className="text-xs text-white font-medium">
+                            {scannedAppointment.branch}
+                          </div>
+                          <div className="text-[10px] text-gray-400 font-sans mt-1">
+                            🕒 Allocated Slot: <strong className="text-[#E5C46D]">{scannedAppointment.date} at {scannedAppointment.time}</strong>
+                          </div>
+                        </div>
+
+                        {/* Special requests / history */}
+                        <div className="bg-[#4a0e17]/10 p-3 rounded-md border border-[#c5a85d]/10 space-y-1">
+                          <p className="text-[9px] text-[#C5A85D] font-sans font-bold uppercase tracking-wider">
+                            ✂️ Tailoring Instructions / Measurements
+                          </p>
+                          <p className="text-xs italic text-zinc-300">
+                            "{scannedAppointment.specialRequests || 'No custom body sketches or fitting adjustments uploaded yet.'}"
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Immediate action: status manager */}
+                      <div className="z-10 pt-3 border-t border-white/5 space-y-2 w-full">
+                        <div className="text-[9px] uppercase tracking-wider text-gray-500 font-sans font-bold text-left">
+                          Quick Desk Decisions
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleApptStatusChange(scannedAppointment.id, 'Confirmed')}
+                            className="flex-1 py-1.5 bg-emerald-950/40 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 transition-colors rounded text-[9px] uppercase font-sans font-semibold tracking-wider cursor-pointer"
+                          >
+                            Confirm Visit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApptStatusChange(scannedAppointment.id, 'Completed')}
+                            className="flex-1 py-1.5 bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 transition-colors rounded text-[9px] uppercase font-sans font-semibold tracking-wider cursor-pointer font-bold"
+                          >
+                            Complete Visit
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ) : qrScanStatus === 'not-found' ? (
+                    <div className="w-full bg-[#161618] border border-red-500/25 rounded-lg p-5 flex flex-col justify-center items-center text-center space-y-3">
+                      <div className="w-10 h-10 rounded-full bg-red-400/5 flex items-center justify-center">
+                        <AlertCircle className="w-5 h-5 text-red-400 hover:animate-ping" />
+                      </div>
+                      <div>
+                        <h5 className="text-[#E5C46D] text-xs font-bold uppercase tracking-widest">
+                          Scan Verification Refused
+                        </h5>
+                        <p className="text-[11px] text-gray-400 font-serif leading-relaxed mt-1">
+                          The coupon data scanned does not resemble an authorized Varudu reservation pass. Verify booking identity of the groom and scan again.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQrScanStatus('idle')}
+                        className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[9px] uppercase font-sans tracking-widest font-bold hover:bg-zinc-700 cursor-pointer"
+                      >
+                        Reset Scanner
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-full bg-zinc-950/50 border border-dashed border-white/10 rounded-lg p-5 flex flex-col justify-center items-center text-center text-zinc-500">
+                      <QrCode className="w-8 h-8 text-zinc-600 mb-3 animate-pulse" />
+                      <p className="font-serif text-xs italic">
+                        "Scan ready. Waiting for front-desk check-in interaction..."
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wider font-sans text-zinc-600 font-bold mt-1 max-w-[200px]">
+                        Scan code or search dummy grooms details manually
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+
             {appointmentViewType === 'calendar' ? (
               /* Custom Showroom Calendar View */
               <div className="space-y-6" id="crm-appointments-calendar">
@@ -4959,6 +5350,13 @@ export default function AdminCRM({ onClose }: CRMProps) {
                           <p>🕒 Time booked: <strong>{appt.date} at {appt.time}</strong></p>
                           <p>💬 Groom Phone: <strong>{appt.customerPhone}</strong></p>
                         </div>
+
+                        {appt.specialRequests && (
+                          <div className="mt-3 p-3 bg-black/40 rounded border border-[#C5A85D]/10 text-xs text-gray-300 font-sans">
+                            <span className="text-[#C5A85D] font-bold uppercase tracking-wider block text-[9px] mb-1.5">✍️ Special Styling Requests & Fabric Concerns</span>
+                            <p className="italic text-gray-400">"{appt.specialRequests}"</p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Appt Modifier */}

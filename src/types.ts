@@ -33,7 +33,10 @@ export interface Appointment {
   customerEmail: string;
   status: 'Confirmed' | 'Pending' | 'Completed' | 'Canceled';
   timestamp: string;
+  specialRequests?: string;
   adminNotes?: string;
+  lastScannedAt?: string;
+  scanCount?: number;
 }
 
 export interface ProductCollection {

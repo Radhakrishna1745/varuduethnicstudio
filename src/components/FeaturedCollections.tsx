@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ProductCollection, GroomVideo } from '../types';
-import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film, Heart, Share2, ChevronLeft, ChevronRight, Volume2, VolumeX, Eye, ExternalLink } from 'lucide-react';
+import { MessageSquare, Sparkles, Send, Ruler, Info, X, Check, Play, Film, Heart, Share2, ChevronLeft, ChevronRight, Volume2, VolumeX, Eye, ExternalLink, Scissors, Maximize2 } from 'lucide-react';
 import { getDynamicCollections, incrementCollectionViews, getDynamicGroomVideos } from '../utils';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { onSnapshot, doc } from 'firebase/firestore';
@@ -68,6 +68,92 @@ export function IndexedAsset({ src, videoSrc, alt, className = "", isBackgroundL
   );
 }
 
+interface FabricMaterial {
+  id: string;
+  name: string;
+  description: string;
+  tactileFeel: string;
+  weaverGuild: string;
+  handcraftTime: string;
+  weightGsmValue: number;
+  rituals: string[];
+  textureUrl: string;
+  embroideryUrl: string;
+  embroideryDetails: string;
+  hotspots: Array<{ x: number; y: number; label: string; desc: string }>;
+}
+
+const FABRICS_DATA: FabricMaterial[] = [
+  {
+    id: 'banarasi-silk',
+    name: 'Imperial Banarasi Silk',
+    description: 'Sourced from the sacred weaving guilds of Varanasi, this legendary fabric is crafted from four-ply natural mulberry silk threads and interwoven with genuine gold zari wire. It offers a majestic weight and an organic, structured form that retains its regal posture.',
+    tactileFeel: 'Crisp, structured with luxurious surface ribbing and continuous metallic thread glide.',
+    weaverGuild: 'Ghat-Weave Legacy Cooperatives, Varanasi',
+    handcraftTime: '45 days of loom-weaving',
+    weightGsmValue: 180,
+    rituals: ['Baraat Procession', 'Grand Shahi Mandap', 'Royal Engagement'],
+    textureUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=1000',
+    embroideryUrl: 'https://images.unsplash.com/photo-1597484211625-24d193eb0418?auto=format&fit=crop&q=80&w=1000',
+    embroideryDetails: 'Custom hand-guided Zardozi stitching incorporating gold dabka, spring-like salma wire, and micro-sequins for a 3D light-catching sheen.',
+    hotspots: [
+      { x: 40, y: 35, label: "24-Karat Zari Weft", desc: "Gold wire melted and hand-woven across mulberry silk warp lines." },
+      { x: 70, y: 65, label: "Sartorial Ribbing", desc: "Heavy four-ply construction for natural posture definition." }
+    ]
+  },
+  {
+    id: 'heritage-velvet',
+    name: 'Royal Heritage Velvet',
+    description: 'A dense, short-pile master-class micro-velvet imported for exceptional crease-resistance. Tailored with a specialized inner-structure, it changes from deep obsidian to rich crimson-gold sheens depending on camera angles and palace spotlighting.',
+    tactileFeel: 'Sublime, thick, ultra-dense pile velvet with a soft, forgiving stretch and heavy drapery.',
+    weaverGuild: 'Imperial Loom-House, Kashmir Valley',
+    handcraftTime: '60 days of hand-stitching',
+    weightGsmValue: 310,
+    rituals: ['Winter Reception', 'Sangeet Night', 'Royal Darbar Seating'],
+    textureUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&q=80&w=1000',
+    embroideryUrl: 'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&q=80&w=1000',
+    embroideryDetails: 'Hand-laid Kashmiri Tilla detailing using double-wrapped silver thread, producing flat, continuous scrolls of classical paisley motifs.',
+    hotspots: [
+      { x: 50, y: 45, label: "Kashmiri Tilla Double Stitch", desc: "Stitched with real coiled sterling silver flat ribbon." },
+      { x: 30, y: 70, label: "Anti-Creasing Pile Cushion", desc: "Dense base structure that blocks camera fold reflection lines." }
+    ]
+  },
+  {
+    id: 'zari-brocade',
+    name: 'Varanasi Zari Brocade',
+    description: 'A heavy, rich, jacquard-style tapestry featuring dynamic, raised-relief gold flowers. Woven exclusively in charcoal or deep crimson bases, it carries the heritage of multi-point master-weaving dating back to the Mughal dynasties.',
+    tactileFeel: 'Extremely textured, heavy, and ornate with a tactile metallic relief pattern.',
+    weaverGuild: 'Kashi Heritage Zari Guilds, Varanasi',
+    handcraftTime: '50 days of looms & embroidery',
+    weightGsmValue: 240,
+    rituals: ['Main Wedding Ceremony', 'Groom Sehra Bandi', 'Post-Wedding Reception'],
+    textureUrl: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&q=80&w=1000',
+    embroideryUrl: 'https://images.unsplash.com/photo-1590073844006-33379778ae09?auto=format&fit=crop&q=80&w=1000',
+    embroideryDetails: 'Antique French bullion wire knots, dori cords, and real kundan-glass stone encrustations along the borders for a heavy, imperial weight.',
+    hotspots: [
+      { x: 45, y: 55, label: "Bullion Knot Embellishments", desc: "Real metallic French spring wire knotted by hand." },
+      { x: 65, y: 30, label: "Kundan-Glass Cabochons", desc: "Semi-precious flat glass stones encrusted into heavy borders." }
+    ]
+  },
+  {
+    id: 'german-raw-silk',
+    name: 'German Canvas Raw Silk',
+    description: 'Premium organic dual-tone textured raw silk backed by structured inter-linings. The fabric is treated with standard anti-creasing blockages to preserve perfect lines, ensuring the groom looks pristine under full physical motion.',
+    tactileFeel: 'Crisp, matte dual-tone slub with a firm, structure-holding drape and natural silk texture.',
+    weaverGuild: 'Organic Silk-Cottage Guild, Bhagalpur',
+    handcraftTime: '30 days of precision tailoring',
+    weightGsmValue: 160,
+    rituals: ['Bespoke Tilak', 'Shahi Haldi Ceremony', 'Intimate Reception Lounge'],
+    textureUrl: 'https://images.unsplash.com/photo-1501183007986-d0d080b147f9?auto=format&fit=crop&q=80&w=1000',
+    embroideryUrl: 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?auto=format&fit=crop&q=80&w=1000',
+    embroideryDetails: 'Tone-on-tone fine resham thread work, miniature bead-clusters, and subtle geometric kantha border stitch-lines.',
+    hotspots: [
+      { x: 50, y: 50, label: "Organic Slub Weft", desc: "Bhagalpur dual-tone spun threads with fine uneven texture." },
+      { x: 35, y: 30, label: "Inner Horsehair Interlining", desc: "Custom structured core lining for strong masculine shoulder fall." }
+    ]
+  }
+];
+
 interface CollectionsProps {
   onSelectProduct: (productName: string) => void;
 }
@@ -79,6 +165,14 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
   const [groomVideos, setGroomVideos] = useState<GroomVideo[]>(() => getDynamicGroomVideos().filter(v => v.status !== 'disabled'));
   const [selectedVideo, setSelectedVideo] = useState<GroomVideo | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(true);
+  
+  // Interactive Fabric Gallery States
+  const [selectedFabricIndex, setSelectedFabricIndex ] = useState<number>(0);
+  const [fabricViewMode, setFabricViewMode] = useState<'texture' | 'embroidery'>('texture');
+  const [zoomScale, setZoomScale] = useState<number>(1.8);
+  const [mousePos, setMousePos] = useState({ x: 50, y: 50 });
+  const [isHovered, setIsHovered] = useState<boolean>(false);
+  const [activeHotspot, setActiveHotspot] = useState<string | null>(null);
   
   // Multiple images in modal tracking
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
@@ -138,7 +232,14 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
     setActiveImageIndex(0);
   }, [selectedProduct]);
 
-  const categories = ['All', 'Sherwanis', 'Indo-Westerns', 'Tuxedos', 'Kurta Sets', 'Reception Wear', 'Accessories', 'Royal Reels 📹'];
+  const categories = ['All', 'Sherwanis', 'Indo-Westerns', 'Tuxedos', 'Kurta Sets', 'Reception Wear', 'Accessories', 'Imperial Fabrics 🧵', 'Royal Reels 📹'];
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setMousePos({ x, y });
+  };
 
   // Handle product inspection and record views metric beautifully
   const handleInspectProduct = (product: ProductCollection) => {
@@ -232,7 +333,294 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
         </div>
 
         {/* Interactive Products Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8" id="collections-grid">
+        {activeCategory === 'Imperial Fabrics 🧵' && (
+          <div className="w-full bg-[#121214]/80 border border-[#C5A85D]/20 rounded-xl overflow-hidden p-6 sm:p-8 lg:p-12 shadow-2xl relative mb-12" id="fabric-gallery-root">
+            {/* Elegant Header */}
+            <div className="border-b border-white/5 pb-8 mb-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+              <div className="space-y-1.5 animate-fade-in">
+                <span className="text-[10px] uppercase font-sans tracking-[0.25em] text-[#C5A85D] font-bold flex items-center gap-1.5">
+                  <Scissors className="w-4 h-4 text-[#C5A85D]" />
+                  Varudu Atelier Textile Lab
+                </span>
+                <h3 className="font-display font-medium text-2xl sm:text-3xl text-white tracking-widest">
+                  TACTILE SWATCH <span className="text-gold-gradient italic font-serif">LOUPE</span>
+                </h3>
+                <p className="text-gray-400 font-serif text-xs italic">
+                  Drag slider and hover over fabric to experience high-res textures & zardozi craft details.
+                </p>
+              </div>
+
+              {/* Fabric material Quick Selectors */}
+              <div className="flex flex-wrap gap-2">
+                {FABRICS_DATA.map((fabric, idx) => (
+                  <button
+                    key={fabric.id}
+                    onClick={() => {
+                      setSelectedFabricIndex(idx);
+                      setFabricViewMode('texture');
+                      setActiveHotspot(null);
+                    }}
+                    className={`px-4 py-2.5 text-[10px] font-sans font-semibold uppercase tracking-widest border transition-all cursor-pointer rounded ${
+                      selectedFabricIndex === idx
+                        ? 'bg-[#C5A85D] text-black border-[#C5A85D] shadow-md shadow-[#C5A85D]/10 font-bold'
+                        : 'bg-black/45 text-gray-300 border-white/10 hover:border-[#C5A85D]/30 hover:text-white'
+                    }`}
+                  >
+                    {fabric.name.replace('Imperial ', '').replace('Royal ', '')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Main Interactive Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
+              
+              {/* Left Column: Interactive Swatch Loupe Visuals (Span 7) */}
+              <div className="lg:col-span-7 flex flex-col space-y-4">
+                
+                {/* View Mode Switcher */}
+                <div className="flex bg-black border border-white/10 p-1 rounded gap-1 self-start">
+                  <button
+                    onClick={() => {
+                      setFabricViewMode('texture');
+                      setActiveHotspot(null);
+                    }}
+                    className={`px-4.5 py-1.5 rounded text-[10px] font-sans font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      fabricViewMode === 'texture'
+                        ? 'bg-[#4A0E17] text-[#E5C46D] border border-[#C5A85D]/35'
+                        : 'text-gray-400 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    Raw Texture Sheen
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFabricViewMode('embroidery');
+                      setActiveHotspot(null);
+                    }}
+                    className={`px-4.5 py-1.5 rounded text-[10px] font-sans font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      fabricViewMode === 'embroidery'
+                        ? 'bg-[#4A0E17] text-[#E5C46D] border border-[#C5A85D]/35'
+                        : 'text-gray-400 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    Embroidery & Weave Detail
+                  </button>
+                </div>
+
+                {/* Swatch Viewer Stage with overflow-hidden & Zoom */}
+                <div
+                  className="relative aspect-[4/3] w-full overflow-hidden border border-[#C5A85D]/15 bg-black rounded-lg cursor-zoom-in"
+                  onMouseMove={handleMouseMove}
+                  onMouseEnter={() => setIsHovered(true)}
+                  onMouseLeave={() => {
+                    setIsHovered(false);
+                    setActiveHotspot(null);
+                  }}
+                >
+                  <img
+                    src={fabricViewMode === 'texture' ? FABRICS_DATA[selectedFabricIndex].textureUrl : FABRICS_DATA[selectedFabricIndex].embroideryUrl}
+                    alt={FABRICS_DATA[selectedFabricIndex].name}
+                    className="w-full h-full object-cover select-none pointer-events-none"
+                    style={{
+                      transform: isHovered ? `scale(${zoomScale})` : 'scale(1)',
+                      transformOrigin: `${mousePos.x}% ${mousePos.y}%`,
+                      transition: isHovered ? 'none' : 'transform 0.5s ease, transform-origin 0.5s ease',
+                    }}
+                    referrerPolicy="no-referrer"
+                  />
+
+                  {/* Shading scrim overlay */}
+                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/85 to-transparent pointer-events-none" />
+
+                  {/* Overlay Hotspots only when NOT zoomed or at low zoom for click targeting, or overlay them continuously */}
+                  {!isHovered && FABRICS_DATA[selectedFabricIndex].hotspots.map((hs, hidx) => (
+                    <button
+                      key={`hotspot-${hidx}`}
+                      onClick={() => setActiveHotspot(hs.label === activeHotspot ? null : hs.label)}
+                      style={{ left: `${hs.x}%`, top: `${hs.y}%` }}
+                      className="absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 group cursor-pointer z-10 flex items-center justify-center bg-transparent border-none outline-none"
+                      title={`Click for ${hs.label}`}
+                    >
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-[#E4C36C] opacity-60 animate-ping" />
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-[#C5A85D] border border-white/40 shadow-lg group-hover:scale-125 transition-transform" />
+                      
+                      {/* Micro coordinates tag line */}
+                      {activeHotspot === hs.label && (
+                        <div className="absolute bottom-7 left-1/2 -translate-x-1/2 bg-black border border-[#C5A85D]/40 p-2.5 text-[9px] w-48 rounded shadow-2xl backdrop-blur-md text-left z-20 animate-fade-in text-white font-sans">
+                          <strong className="text-[#C5A85D] block mb-0.5 tracking-wider uppercase font-bold text-[8px]">{hs.label}</strong>
+                          <span className="text-gray-300 font-normal leading-relaxed">{hs.desc}</span>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+
+                  {/* Bottom display watermark */}
+                  <div className="absolute bottom-3 right-3 bg-black/85 border border-white/5 text-[#E5C46D] text-[9px] font-mono tracking-widest uppercase px-2.5 py-1 z-10 rounded">
+                    {fabricViewMode === 'texture' ? 'TEXTURE SCAN 📸' : 'EMBROIDERY FOCUS ⚜'}
+                  </div>
+
+                  {/* Overlay scale label */}
+                  {isHovered && (
+                    <div className="absolute top-3 left-3 bg-[#4A0E17]/95 border border-[#C5A85D]/30 text-white text-[8px] font-sans uppercase tracking-[0.15em] px-2 py-0.5 rounded shadow z-10 animate-pulse">
+                      Loupe active: {zoomScale.toFixed(1)}x
+                    </div>
+                  )}
+                </div>
+
+                {/* Loupe Controls Slider */}
+                <div className="bg-black/40 border border-white/5 p-4 rounded-md space-y-2 font-sans flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="space-y-0.5 flex-1 max-w-sm">
+                    <label className="text-[9px] uppercase font-bold tracking-widest text-gray-300 block">
+                      Optical Swatch Loupe Magnifier
+                    </label>
+                    <p className="text-[10px] text-gray-500 font-serif italic">
+                      Adjust scale from close-up to micro weave patterns
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-3 w-full sm:w-auto shrink-0">
+                    <span className="text-[10px] font-mono text-[#C5A85D] font-bold">1.0x</span>
+                    <input
+                      type="range"
+                      min="1.0"
+                      max="3.5"
+                      step="0.1"
+                      value={zoomScale}
+                      onChange={(e) => setZoomScale(parseFloat(e.target.value))}
+                      className="w-full sm:w-44 accent-[#C5A85D] cursor-pointer"
+                    />
+                    <span className="text-[10px] font-mono text-[#C5A85D] font-bold">3.5x</span>
+                    <span className="ml-2 bg-[#4A0E17] text-[#E5C46D] px-2 py-1 rounded text-[9px] font-mono font-bold border border-[#C5A85D]/20">
+                      {zoomScale.toFixed(1)}x
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: Tactile Specs & Conversion Hooks (Span 5) */}
+              <div className="lg:col-span-5 flex flex-col justify-between space-y-6 sm:space-y-8">
+                
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-sans text-[10px] uppercase font-bold tracking-[0.25em] text-[#C5A85D]">
+                      Material Spotlight
+                    </h4>
+                    <h3 className="font-display font-medium text-2xl sm:text-3xl text-white tracking-widest mt-0.5">
+                      {FABRICS_DATA[selectedFabricIndex].name}
+                    </h3>
+                  </div>
+
+                  <p className="text-gray-300 font-serif text-xs md:text-sm leading-relaxed tracking-wide italic">
+                    &ldquo;{FABRICS_DATA[selectedFabricIndex].description}&rdquo;
+                  </p>
+
+                  {/* Hotspot Lens Info Box if user hovered/clicked a hotspot */}
+                  <div className="bg-[#1A1112] border border-[#4D1A22]/40 rounded-lg p-4 font-sans space-y-1.5 shadow">
+                    <span className="text-[8px] uppercase tracking-widest font-bold text-[#E5C46D] bg-[#4A0E17]/60 border border-[#C5A85D]/20 px-2 py-0.5 rounded inline-block">
+                      LENS CHRONICLE 🔮
+                    </span>
+                    <p className="text-[11px] text-gray-200 leading-relaxed font-serif">
+                      {activeHotspot 
+                        ? `Focus on matches: ${FABRICS_DATA[selectedFabricIndex].hotspots.find(h => h.label === activeHotspot)?.desc}` 
+                        : fabricViewMode === 'texture' 
+                          ? `Tactile Profile: ${FABRICS_DATA[selectedFabricIndex].tactileFeel}` 
+                          : `Embroidery Detail: ${FABRICS_DATA[selectedFabricIndex].embroideryDetails}`
+                      }
+                    </p>
+                  </div>
+
+                  {/* Technical Spec Dashboard Grid */}
+                  <div className="mt-6 border-t border-white/5 pt-6 space-y-3">
+                    <h5 className="font-sans text-[9px] uppercase tracking-wider text-gray-400 font-bold">
+                      Sartorial Metrology Registry
+                    </h5>
+                    
+                    <div className="grid grid-cols-2 gap-4 font-sans">
+                      <div className="bg-black/50 border border-white/5 p-3 rounded">
+                        <span className="text-[8px] uppercase tracking-widest text-[#C5A85D] block">GSM Metrology Weight</span>
+                        <span className="text-white text-base font-mono font-bold mt-1 block">
+                          {FABRICS_DATA[selectedFabricIndex].weightGsmValue} <span className="text-[10px] text-gray-400 font-sans">GSM</span>
+                        </span>
+                        <span className="text-[8px] text-gray-500 font-serif italic mt-0.5 block">Heavy drape performance</span>
+                      </div>
+
+                      <div className="bg-black/50 border border-white/5 p-3 rounded">
+                        <span className="text-[8px] uppercase tracking-widest text-[#C5A85D] block">Handcraft Timeframe</span>
+                        <span className="text-white text-[11px] font-bold mt-1.5 block uppercase truncate">
+                          {FABRICS_DATA[selectedFabricIndex].handcraftTime}
+                        </span>
+                        <span className="text-[8px] text-gray-500 font-serif italic mt-0.5 block">Exquisite manual labor</span>
+                      </div>
+
+                      <div className="bg-black/50 border border-white/5 p-3 rounded col-span-2">
+                        <span className="text-[8px] uppercase tracking-widest text-[#C5A85D] block">Weaver Guild Association</span>
+                        <span className="text-white text-xs font-bold mt-1 block uppercase">
+                          {FABRICS_DATA[selectedFabricIndex].weaverGuild}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recommended Wedding Rituals */}
+                  <div className="space-y-2">
+                    <span className="text-[9px] uppercase font-bold text-gray-400 font-sans tracking-wide block">
+                      Recommended Royal Rituals
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {FABRICS_DATA[selectedFabricIndex].rituals.map((ritual, rIdx) => (
+                        <span
+                          key={rIdx}
+                          className="bg-[#4A0E17]/25 border border-[#C5A85D]/15 text-[#E5C46D] px-2.5 py-1 text-[9px] font-sans uppercase tracking-wider rounded"
+                        >
+                          🏰 {ritual}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Swatch-specific Booking Action Hub */}
+                <div className="border-t border-[#C5A85D]/20 pt-6 space-y-3.5">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4 font-sans">
+                    <button
+                      onClick={() => {
+                        onSelectProduct(`${FABRICS_DATA[selectedFabricIndex].name} (Atelier Swatch Fitting Preference)`);
+                        // Scroll to the Consultation & Booking engines
+                        const target = document.getElementById('consultation-engine');
+                        if (target) {
+                          target.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
+                      className="flex items-center justify-center space-x-2 py-3 bg-gradient-to-r from-[#C5A85D] to-[#E5C46D] hover:scale-[1.01] text-black text-[10px] font-sans font-bold uppercase tracking-[0.15em] rounded transition-all cursor-pointer shadow-lg"
+                    >
+                      <Scissors className="w-3.5 h-3.5 animate-pulse" />
+                      <span>Select For Fitting</span>
+                    </button>
+
+                    <a
+                      href={`https://wa.me/919000777265?text=${encodeURIComponent(`Hi Varudu Ethnic Studio team! I am inspecting your interactive 'Fabric Gallery' on the website and is highly interested in the "${FABRICS_DATA[selectedFabricIndex].name}" and its embroidery features. Can you bring a swatch catalog during my custom fitting preview?`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center space-x-1.5 py-3 bg-emerald-600/15 hover:bg-emerald-600 border border-emerald-500/20 text-emerald-400 hover:text-white font-sans text-[10px] uppercase font-bold tracking-wider rounded transition-all shadow"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>WhatsApp Swatch</span>
+                    </a>
+                  </div>
+                  <p className="text-[9px] text-gray-500 text-center font-serif italic">
+                    * Interactive Fabric catalog is synced with our local Atelier showrooms. Swatch books are presented during first fittings.
+                  </p>
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        <div className={`${activeCategory === 'Imperial Fabrics 🧵' ? 'hidden' : 'grid'} grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8`} id="collections-grid">
           {activeCategory === 'Royal Reels 📹' ? (
             groomVideos.map((video) => (
               <div
@@ -445,7 +833,7 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
         </div>
 
         {/* Curated Pagination Control for ultra responsive loading */}
-        {activeCategory !== 'Royal Reels 📹' && filteredProducts.length > 12 && (
+        {activeCategory !== 'Royal Reels 📹' && activeCategory !== 'Imperial Fabrics 🧵' && filteredProducts.length > 12 && (
           <div className="flex flex-col items-center justify-center mt-12 pt-10 border-t border-white/5">
             <p className="text-[10px] uppercase tracking-[0.20em] font-sans text-gray-400 mb-4 font-bold">
               Curated View: <span className="text-[#E5C46D] font-mono">{Math.min(visibleCount, filteredProducts.length)}</span> of <span className="text-[#E5C46D] font-mono">{filteredProducts.length}</span> Masterpieces
@@ -467,7 +855,7 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
         )}
 
         {/* Row of Dynamic Reels underneath the Collections grid */}
-        {activeCategory !== 'Royal Reels 📹' && groomVideos.length > 0 && (
+        {activeCategory !== 'Royal Reels 📹' && activeCategory !== 'Imperial Fabrics 🧵' && groomVideos.length > 0 && (
           <div className="mt-20 pt-16 border-t border-[#C5A85D]/10" id="collections-groom-cinema-showcase">
             <div className="flex flex-col md:flex-row items-center justify-between mb-8">
               <div>

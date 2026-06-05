@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { saveLead, playRegalGoldChime } from '../utils';
 import { uploadToStorage } from '../firebase';
-import { Upload, HelpCircle, Check, Sparkles, MessageCircle, AlertCircle, FileText, Smartphone } from 'lucide-react';
+import { Upload, HelpCircle, Check, Sparkles, MessageCircle, AlertCircle, FileText, Smartphone, Mail, Bell, Clock, Send, Calendar } from 'lucide-react';
 
 interface ConsultationSystemProps {
   preFilledProduct?: string;
@@ -25,6 +26,11 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
   const [notes, setNotes] = useState(preFilledProduct ? `Interested in inquiring about: ${preFilledProduct}` : '');
   const [termsAccepted, setTermsAccepted] = useState(false);
   
+  // Validation States
+  const [phoneError, setPhoneError] = useState('');
+  const [dateError, setDateError] = useState('');
+  const [formError, setFormError] = useState('');
+  
   // Image Upload States
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -34,6 +40,24 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
 
   // Success Feedback
   const [submittedLead, setSubmittedLead] = useState<any | null>(null);
+  const [showSimulatedReminder, setShowSimulatedReminder] = useState(false);
+  const [reminderNotificationSent, setReminderNotificationSent] = useState(false);
+
+  const getReminderDateString = (weddingDateStr: string) => {
+    if (!weddingDateStr) return '24 Hours prior to ceremony';
+    try {
+      const d = new Date(weddingDateStr);
+      d.setDate(d.getDate() - 1);
+      return d.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    } catch (e) {
+      return '24 Hours prior to ceremony';
+    }
+  };
 
   const colorsList = ['Ivory White', 'Mint Green', 'Royal Crimson Red', 'Midnight Black', 'Kesar Gold', 'Emerald Navy', 'Sage Pastel', 'Champagne Beige'];
   const stylesList = ['Traditional Sherwani', 'Peshawari Layered Set', 'Asymmetric Indo-Western', 'Classic Jodhpuri Bandhgala', 'Double-Vented Tuxedo Suit'];
@@ -124,8 +148,35 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Clear previous errors
+    setPhoneError('');
+    setDateError('');
+    setFormError('');
+
+    // Phone Validation: Ensure at least 10 digits
+    const cleanedPhone = phone.replace(/\D/g, '');
+    if (cleanedPhone.length < 10) {
+      setPhoneError('WhatsApp phone must contain at least 10 digits.');
+      setFormError('Measurement validation failed: The WhatsApp phone number must contain at least 10 digits.');
+      return;
+    }
+
+    // Wedding Date Validation: Ensure date is not in the past
+    if (weddingDate) {
+      const selectedDate = new Date(weddingDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // start of today
+      
+      if (selectedDate < today) {
+        setDateError('The wedding date cannot be in the past.');
+        setFormError('Inquiry Validation Failed: The selected wedding date has already passed. Please select an upcoming date.');
+        return;
+      }
+    }
+
     if (!termsAccepted) {
-      alert('Please review and accept our strict privacy agreement.');
+      setFormError('Please review and accept our strict privacy agreement.');
       return;
     }
 
@@ -160,8 +211,10 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
   const handleReset = () => {
     setName('');
     setPhone('');
+    setPhoneError('');
     setEmail('');
     setWeddingDate('');
+    setDateError('');
     setOccasion('Main Wedding Ceremony (Baraat & Pheras)');
     setBudget('premium');
     setPreferredColors([]);
@@ -170,6 +223,9 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
     setUploadedImages([]);
     setTermsAccepted(false);
     setSubmittedLead(null);
+    setFormError('');
+    setShowSimulatedReminder(false);
+    setReminderNotificationSent(false);
   };
 
   // Format WhatsApp template code to show to the customer or trigger
@@ -177,6 +233,28 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
     if (!submittedLead) return '#';
     const text = `*NEW GROOM CONSULTATION INQUIRY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Groom Name:* ${submittedLead.name}\n📞 *Phone Number:* ${submittedLead.phone}\n📅 *Wedding Date:* ${submittedLead.weddingDate}\n🏛️ *Occasion Type:* ${submittedLead.occasion}\n💎 *Budget Tier:* ${submittedLead.budget.toUpperCase()}\n🎨 *Preferred Colors:* ${submittedLead.preferredColors.join(', ')}\n👔 *Style Prefs:* ${submittedLead.preferredStyles.join(', ')}\n📝 *Client Notes:* ${submittedLead.notes || 'No extra notes.'}\n━━━━━━━━━━━━━━━━━━━━\n✨ _Submitted instantly from Royal Applet. Status Set: NEW._`;
     return `https://wa.me/919000777265?text=${encodeURIComponent(text)}`;
+  };
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.08,
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { 
+      opacity: 1, 
+      y: 0, 
+      transition: { 
+        duration: 0.5, 
+        ease: [0.16, 1, 0.3, 1] 
+      } 
+    }
   };
 
   return (
@@ -231,6 +309,132 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
               </div>
             </div>
 
+            {/* Simulated 24-Hour Reminder Box */}
+            <div className="mt-6 p-6 bg-gradient-to-b from-zinc-900/60 to-black/40 border border-[#C5A85D]/20 rounded-lg text-left max-w-xl mx-auto shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2 text-[#C5A85D] font-sans text-[10px] tracking-widest uppercase font-semibold">
+                  <Bell className="w-4 h-4 text-[#C5A85D] animate-bounce" />
+                  <span>24-Hour Imperial Wedding Reminder</span>
+                </div>
+                <span className="bg-[#C5A85D]/10 text-[#C5A85D] text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border border-[#C5A85D]/25 font-bold">
+                  Active Schedule
+                </span>
+              </div>
+              
+              <div className="space-y-3 text-xs text-gray-300">
+                <p className="font-serif leading-relaxed text-[11px] text-gray-400">
+                  To guarantee perfect final drapes and fitting adjustments, our system has scheduled an automated imperial reminder 24 hours prior to your wedding day.
+                </p>
+                <div className="p-3 bg-black/60 rounded border border-white/5 space-y-1.5 font-sans text-[11px]">
+                  <div className="flex items-center space-x-2 font-medium">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Scheduled Date: <strong className="text-[#E5C46D]">{getReminderDateString(submittedLead.weddingDate)}</strong></span>
+                  </div>
+                  <div className="flex items-center space-x-2 font-medium">
+                    <Mail className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Notification Sent To: <strong className="text-white">{submittedLead.email || 'whatsapp-fallback'}</strong> & <strong className="text-white">{submittedLead.phone}</strong></span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSimulatedReminder(!showSimulatedReminder);
+                      setReminderNotificationSent(true);
+                      playRegalGoldChime();
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 bg-[#C5A85D]/10 hover:bg-[#C5A85D]/20 border border-[#C5A85D]/30 text-[#C5A85D] hover:text-white font-sans text-[10px] uppercase font-bold tracking-wider rounded cursor-pointer transition-all flex items-center justify-center space-x-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{showSimulatedReminder ? 'Hide System Preview' : '⚡ Simulate Reminder Trigger Now'}</span>
+                  </button>
+                  {reminderNotificationSent && (
+                    <span className="text-[10px] text-emerald-400 font-sans flex items-center shrink-0">
+                      <Check className="w-3.5 h-3.5 mr-1" /> Reminder Sent Simulating Successful!
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Simulated Reminder Preview Panel */}
+              <AnimatePresence>
+                {showSimulatedReminder && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-4 pt-4 border-t border-white/10 overflow-hidden"
+                  >
+                    <div className="space-y-4 bg-zinc-950 p-4 rounded border border-[#C5A85D]/30">
+                      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                        <div className="flex items-center space-x-1.5">
+                          <div className="w-2 h-2 rounded-full bg-red-500" />
+                          <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                          <div className="w-2 h-2 rounded-full bg-green-500" />
+                        </div>
+                        <span className="text-[9px] font-mono text-gray-500 uppercase">Interactive Client Notification Log</span>
+                      </div>
+
+                      {/* Mock Smartphone SMS */}
+                      <div className="space-y-1">
+                        <span className="text-[8px] uppercase tracking-widest text-[#C5A85D] block font-semibold">SMS / WhatsApp Message (Scheduled Client Push)</span>
+                        <div className="p-3 bg-zinc-900 border border-white/5 rounded text-[11px] leading-relaxed text-gray-300 font-mono">
+                          <p className="text-amber-300 font-bold">👑 VARUDU ROYAL REMINDER</p>
+                          <p className="mt-1">
+                            Respected <strong>{submittedLead.name}</strong>, this is your wedding custom drape fitting reminder for your upcoming ceremony/appointment scheduled tomorrow (<strong>{submittedLead.weddingDate}</strong>).
+                          </p>
+                          <p className="mt-1">
+                            Our master drapers have calibrated matching color fits reflecting your selected <strong>{submittedLead.preferredColors.join(', ')}</strong> layouts to ensure supreme luxury wear comfort.
+                          </p>
+                          <p className="mt-1 text-gray-400 text-[10px]">
+                            Showroom: Chaitanyapuri, Hyderabad. Call registry: +91 9000777265.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Mock Rich Email */}
+                      {submittedLead.email && (
+                        <div className="space-y-1">
+                          <span className="text-[8px] uppercase tracking-widest text-[#C5A85D] block font-semibold">Email Dispatch Inbox (Client Mailbox)</span>
+                          <div className="bg-[#121212] border border-white/10 rounded overflow-hidden">
+                            <div className="p-2 bg-zinc-900 border-b border-white/5 text-[9px] text-gray-400 space-y-0.5">
+                              <p><strong>From:</strong> registry@varuduethnic.com (Varudu Royal Fitting Registry)</p>
+                              <p><strong>To:</strong> {submittedLead.email}</p>
+                              <p><strong>Subject:</strong> 24-Hours To Wedding Fitting Coordination: Your Bespoke Wear is Ready 📦</p>
+                            </div>
+                            <div className="p-4 text-xs font-serif text-gray-300 leading-relaxed space-y-3">
+                              <div className="text-center pb-2 border-b border-white/5">
+                                <h4 className="font-sans font-bold tracking-[0.25em] text-white uppercase text-[11px]">VARUDU ETHNIC STUDIO</h4>
+                                <span className="text-[8px] font-mono text-[#C5A85D] uppercase">Impeccable Weaving & Fitting Audits</span>
+                              </div>
+                              <p>
+                                Dear <strong>{submittedLead.name}</strong>,
+                              </p>
+                              <p>
+                                Greetings from the fitting desk at Varudu. As your wedding day approaches, we want to ensure your custom apparel fits with ultimate comfort.
+                              </p>
+                              <p>
+                                Your 24-hour coordination window starts tomorrow. Our master weavers have incorporated your preferred colors <strong>({submittedLead.preferredColors.join(', ')})</strong> with luxury-grade canvas alignments.
+                              </p>
+                              <div className="p-3 bg-black/40 rounded border border-[#C5A85D]/10 font-sans space-y-1">
+                                <p className="text-[10px] text-[#C5A85D] uppercase tracking-widest font-semibold">Coordination Directives:</p>
+                                <p className="text-[11px]">👤 Candidate ID: <span className="text-white">#{submittedLead.id.replace('lead-', '')}</span></p>
+                                <p className="text-[11px]">📍 Fitting Location: <span className="text-white">Varudu Chaitanyapuri, Hyderabad</span></p>
+                              </div>
+                              <p className="text-[11px] italic text-gray-400">
+                                This automated dispatch has been executed via client-centric sync algorithms to guarantee perfect, stress-free elegance.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             {/* Instant WhatsApp activation triggers */}
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
               <a
@@ -273,10 +477,29 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <motion.form 
+              onSubmit={handleSubmit} 
+              className="space-y-6"
+              variants={containerVariants}
+              initial="hidden"
+              animate="show"
+            >
               
+              {formError && (
+                <motion.div 
+                  variants={itemVariants}
+                  className="p-4 bg-red-950/40 border border-red-500/30 rounded text-red-200 text-xs font-sans flex items-start space-x-2.5 shadow-lg animate-fadeIn"
+                >
+                  <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h5 className="font-semibold text-red-450 uppercase tracking-widest text-[9px] mb-1">Registration Swatch Alert</h5>
+                    <p>{formError}</p>
+                  </div>
+                </motion.div>
+              )}
+
               {/* Image Upload Area with camera capability simulation */}
-              <div>
+              <motion.div variants={itemVariants}>
                 <label className="block text-xs uppercase font-sans tracking-wider text-[#C5A85D] mb-2 font-semibold">
                   Upload Creative Concept / Bridal Colors / Suit Reference Models (Multi-Upload Support)
                 </label>
@@ -314,7 +537,7 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <div className="w-12 h-12 bg-[#121212] border border-[#C5A85D]/25 flex items-center justify-center rounded-full mx-auto mb-2 text-[#C5A85D]">
+                       <div className="w-12 h-12 bg-[#121212] border border-[#C5A85D]/25 flex items-center justify-center rounded-full mx-auto mb-2 text-[#C5A85D]">
                         <Upload className="w-5 h-5" />
                       </div>
                       <p className="font-sans font-medium text-xs text-gray-300">
@@ -352,10 +575,10 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     </div>
                   </div>
                 )}
-              </div>
+              </motion.div>
 
               {/* Personal Info Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1.5 font-medium">
                     Groom Name *
@@ -377,10 +600,23 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     type="tel"
                     required
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (phoneError) setPhoneError('');
+                    }}
                     placeholder="e.g. +91 98765 43210"
-                    className="w-full bg-[#0A0A0A] border border-white/10 focus:border-[#C5A85D] px-4 py-3 rounded text-sm text-white font-sans focus:outline-none transition-all placeholder:text-gray-600"
+                    className={`w-full bg-[#0A0A0A] border px-4 py-3 rounded text-sm text-white font-sans focus:outline-none transition-all placeholder:text-gray-600 ${
+                      phoneError 
+                        ? 'border-red-500 focus:border-red-500 bg-red-500/5' 
+                        : 'border-white/10 focus:border-[#C5A85D]'
+                    }`}
                   />
+                  {phoneError && (
+                    <p className="text-red-400 text-[10px] mt-1.5 font-sans flex items-center">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-400 mr-1.5 shrink-0" />
+                      {phoneError}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1.5 font-medium">
@@ -395,10 +631,10 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     className="w-full bg-[#0A0A0A] border border-white/10 focus:border-[#C5A85D] px-4 py-3 rounded text-sm text-white font-sans focus:outline-none transition-all placeholder:text-gray-600"
                   />
                 </div>
-              </div>
+              </motion.div>
 
               {/* Timing and Budget */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1.5 font-medium">
                     Anticipated Wedding Date *
@@ -407,9 +643,22 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     type="date"
                     required
                     value={weddingDate}
-                    onChange={(e) => setWeddingDate(e.target.value)}
-                    className="w-full bg-[#0A0A0A] border border-white/10 focus:border-[#C5A85D] px-4 py-3 rounded text-sm text-white font-sans focus:outline-none transition-all"
+                    onChange={(e) => {
+                      setWeddingDate(e.target.value);
+                      if (dateError) setDateError('');
+                    }}
+                    className={`w-full bg-[#0A0A0A] border px-4 py-3 rounded text-sm text-white font-sans focus:outline-none transition-all ${
+                      dateError 
+                        ? 'border-red-500 focus:border-red-500 bg-red-500/5' 
+                        : 'border-white/10 focus:border-[#C5A85D]'
+                    }`}
                   />
+                  {dateError && (
+                    <p className="text-red-400 text-[10px] mt-1.5 font-sans flex items-center">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-400 mr-1.5 shrink-0" />
+                      {dateError}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1.5 font-medium">
@@ -443,10 +692,10 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     <option value="above-5lakh">Besame Haute-Artistry (&gt; ₹5Lakh)</option>
                   </select>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Colors Filter Toggle */}
-              <div>
+              <motion.div variants={itemVariants}>
                 <label className="block text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] mb-2 font-semibold">
                   Preferred Color Palette
                 </label>
@@ -469,10 +718,10 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     );
                   })}
                 </div>
-              </div>
+              </motion.div>
 
               {/* Styles List Filter Toggle */}
-              <div>
+              <motion.div variants={itemVariants}>
                 <label className="block text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] mb-2 font-semibold">
                   Preferred Fitting Styles
                 </label>
@@ -495,12 +744,12 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                     );
                   })}
                 </div>
-              </div>
+              </motion.div>
 
               {/* Extra notes */}
-              <div>
+              <motion.div variants={itemVariants}>
                 <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1.5 font-medium">
-                  Additional Notes (Groom height, bride\'s outfit description, unique customizations...)
+                  Additional Notes (Groom height, bride's outfit description, unique customizations...)
                 </label>
                 <textarea
                   value={notes}
@@ -508,10 +757,10 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                   placeholder="Tell us about your wedding styling goals... "
                   className="w-full h-32 bg-[#0A0A0A] border border-white/10 focus:border-[#C5A85D] px-4 py-3 rounded text-sm text-white font-sans focus:outline-none transition-all placeholder:text-gray-600 resize-none"
                 />
-              </div>
+              </motion.div>
 
               {/* Privacy and verification guidelines */}
-              <div className="flex items-start space-x-3 bg-black/40 p-4 border border-[#C5A85D]/10 rounded">
+              <motion.div variants={itemVariants} className="flex items-start space-x-3 bg-black/40 p-4 border border-[#C5A85D]/10 rounded">
                 <input
                   type="checkbox"
                   required
@@ -521,20 +770,22 @@ export default function ConsultationSystem({ preFilledProduct = '', onSuccess }:
                   className="mt-1 accent-[#C5A85D] cursor-pointer"
                 />
                 <label htmlFor="privacy-check" className="text-[10px] text-gray-400 leading-normal font-sans cursor-pointer">
-                  I agree to save my groom measurements and concepts with Varudu. I confirm that all uploaded photos represent 100% genuine groom or menswear references in compliance with the store\'s strict, client-centric privacy policy.
+                  I agree to save my groom measurements and concepts with Varudu. I confirm that all uploaded photos represent 100% genuine groom or menswear references in compliance with the store's strict, client-centric privacy policy.
                 </label>
-              </div>
+              </motion.div>
 
               {/* Submit CTA */}
-              <button
-                type="submit"
-                className="w-full py-4 bg-gradient-to-r from-[#C5A85D] to-[#E5C46D] text-black font-sans font-bold text-xs uppercase tracking-[0.2em] rounded transition-transform duration-300 hover:scale-[1.01] hover:shadow-lg hover:shadow-[#C5A85D]/10 cursor-pointer flex items-center justify-center space-x-2"
-              >
-                <Sparkles className="w-4.5 h-4.5 text-black" />
-                <span>Submit Styling Profile & Trigger Sound Buzz</span>
-              </button>
+              <motion.div variants={itemVariants}>
+                <button
+                  type="submit"
+                  className="w-full py-4 bg-gradient-to-r from-[#C5A85D] to-[#E5C46D] text-black font-sans font-bold text-xs uppercase tracking-[0.2em] rounded transition-transform duration-300 hover:scale-[1.01] hover:shadow-lg hover:shadow-[#C5A85D]/10 cursor-pointer flex items-center justify-center space-x-2"
+                >
+                  <Sparkles className="w-4.5 h-4.5 text-black" />
+                  <span>Submit Styling Profile & Trigger Sound Buzz</span>
+                </button>
+              </motion.div>
 
-            </form>
+            </motion.form>
 
           </div>
         )}

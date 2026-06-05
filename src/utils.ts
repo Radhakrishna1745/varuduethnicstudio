@@ -101,7 +101,10 @@ const MOCK_APPOINTMENTS: Appointment[] = [
 let _leadsInMemory: CustomerLead[] | null = null;
 let _appointmentsInMemory: Appointment[] | null = null;
 let _settingsInMemory: Record<string, any> = {};
+let _settingsLoaded = false;
 let _mediaAssetsInMemory: any[] = [];
+
+export const hasSettingsLoaded = () => _settingsLoaded;
 
 // Helper to initialize local data
 export const getStoredLeads = (): CustomerLead[] => {
@@ -209,7 +212,32 @@ export const updateAppointmentStatus = (id: string, status: Appointment['status'
     });
   }
 
-  window.dispatchEvent(new CustomEvent('varudu-appointment-updated'));
+  window.dispatchEvent(new CustomEvent('varudu-appointment-updated', { detail: updated }));
+  return updated;
+};
+
+export const updateAppointmentScanEvent = (id: string): Appointment[] => {
+  const appts = getStoredAppointments();
+  let updatedDoc: Appointment | null = null;
+  const updated = appts.map(a => {
+    if (a.id === id) {
+      const scanCount = a.scanCount !== undefined ? a.scanCount + 1 : 1;
+      const match = { ...a, scanCount, lastScannedAt: String(Date.now()) };
+      updatedDoc = match;
+      return match;
+    }
+    return a;
+  });
+  _appointmentsInMemory = updated;
+
+  // Sync update to Firebase in background
+  if (updatedDoc) {
+    setDoc(doc(db, 'appointments', id), updatedDoc).catch(error => {
+      handleFirestoreError(error, OperationType.UPDATE, `appointments/${id}`);
+    });
+  }
+
+  window.dispatchEvent(new CustomEvent('varudu-appointment-updated', { detail: updated }));
   return updated;
 };
 
@@ -317,6 +345,7 @@ export const startLiveSync = () => {
     snapshot.forEach(docSnap => {
       _settingsInMemory[docSnap.id] = docSnap.data();
     });
+    _settingsLoaded = true;
     window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: _settingsInMemory }));
     if (_settingsInMemory.collections && Array.isArray(_settingsInMemory.collections.list)) {
       window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: _settingsInMemory.collections.list }));

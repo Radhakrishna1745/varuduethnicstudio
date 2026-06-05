@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import FullscreenHero from './components/FullscreenHero';
@@ -21,7 +22,7 @@ import GroomFAQ from './components/GroomFAQ';
 import { 
   getStoredLeads, getStoredAppointments, 
   saveAppointment, getGroomStructuredSchema, playRegalGoldChime,
-  startLiveSync, getWebPhoto
+  startLiveSync, getWebPhoto, updateAppointmentScanEvent
 } from './utils';
 
 import { 
@@ -35,8 +36,33 @@ import {
 import { 
   Sparkles, Calendar, MessageSquare, Phone, MapPin, 
   Clock, ShieldCheck, Star, ArrowRight, BookOpen, 
-  Heart, Check, Info, Award, Settings, UserCheck, X 
+  Heart, Check, Info, Award, Settings, UserCheck, X, Printer, Navigation, QrCode, Volume2, RefreshCw
 } from 'lucide-react';
+
+// Framer Motion Animation Variants for Staggered Appt Inputs
+const formContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.08,
+      delayChildren: 0.05
+    }
+  }
+};
+
+const formItemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  show: { 
+    opacity: 1, 
+    y: 0,
+    transition: {
+      type: 'spring',
+      stiffness: 100,
+      damping: 15
+    }
+  }
+};
 
 export default function App() {
   // Cinema Logo Splash Screen Intro State
@@ -94,13 +120,101 @@ export default function App() {
 
   // VIP Appointment Form States
   const [apptBranch, setApptBranch] = useState('Chaitanyapuri Studio - Kothapet');
+  const [apptSecondaryBranch, setApptSecondaryBranch] = useState('');
+  const [apptMultiSelect, setApptMultiSelect] = useState(false);
   const [apptDate, setApptDate] = useState('');
   const [apptTime, setApptTime] = useState('11:00 AM');
   const [apptOccasion, setApptOccasion] = useState('Main Wedding Sherwani Trial');
   const [apptName, setApptName] = useState('');
   const [apptPhone, setApptPhone] = useState('');
   const [apptEmail, setApptEmail] = useState('');
+  const [apptSpecialRequests, setApptSpecialRequests] = useState('');
   const [apptSuccessTicket, setApptSuccessTicket] = useState<any | null>(null);
+
+  // Geolocation Pre-Selection States
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState('');
+  const [geoSuccessMsg, setGeoSuccessMsg] = useState('');
+
+  const autoDetectNearestStudio = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError('');
+    setGeoSuccessMsg('');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+        
+        // Studio Coordinates:
+        // Kothapet: Lat 17.3682053, Lng 78.5309888
+        // Secunderabad: Lat 17.4697413, Lng 78.5089814
+        const kothapetLat = 17.3682053;
+        const kothapetLng = 78.5309888;
+        const secunderabadLat = 17.4697413;
+        const secunderabadLng = 78.5089814;
+
+        const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+          const R = 6371; // Earth Radius in km
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLon = (lon2 - lon1) * Math.PI / 180;
+          const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          return R * c;
+        };
+
+        const distToKothapet = getDistance(userLat, userLng, kothapetLat, kothapetLng);
+        const distToSecunderabad = getDistance(userLat, userLng, secunderabadLat, secunderabadLng);
+
+        if (distToKothapet < distToSecunderabad) {
+          setApptBranch('Chaitanyapuri Studio - Kothapet');
+          if (apptMultiSelect) {
+            setApptSecondaryBranch('Secunderabad Lounge - Thirumalagiri');
+          } else {
+            setApptSecondaryBranch('');
+          }
+          setGeoSuccessMsg(`Kothapet Studio is closest to you (~${distToKothapet.toFixed(1)} km away).`);
+        } else {
+          setApptBranch('Secunderabad Lounge - Thirumalagiri');
+          if (apptMultiSelect) {
+            setApptSecondaryBranch('Chaitanyapuri Studio - Kothapet');
+          } else {
+            setApptSecondaryBranch('');
+          }
+          setGeoSuccessMsg(`Secunderabad Lounge is closest to you (~${distToSecunderabad.toFixed(1)} km away).`);
+        }
+        setGeoLoading(false);
+        playRegalGoldChime();
+      },
+      (error) => {
+        let msg = 'Failed to retrieve location.';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Permission denied. Set location access settings on your browser to auto-detect showrooms.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = 'Location position unavailable.';
+        } else if (error.code === error.TIMEOUT) {
+          msg = 'Location request timed out.';
+        }
+        setGeoError(msg);
+        setGeoLoading(false);
+      },
+      { enableHighAccuracy: false, timeout: 6000, maximumAge: 600000 }
+    );
+  };
+
+  // Trigger auto-detect when accessing the appointment form
+  useEffect(() => {
+    if (activeView === 'appointment') {
+      autoDetectNearestStudio();
+    }
+  }, [activeView]);
 
   // Floating widgets toggles
   const [isUrgencyPromptOpen, setIsUrgencyPromptOpen] = useState(true);
@@ -146,6 +260,51 @@ export default function App() {
     };
   }, []);
 
+  // Listen for Live Scanner Event on the current apptSuccessTicket
+  useEffect(() => {
+    if (!apptSuccessTicket) return;
+
+    let lastScanCount = apptSuccessTicket.scanCount || 0;
+    let lastScannedTime = apptSuccessTicket.lastScannedAt || '';
+
+    const handleAppointmentsChange = (e: any) => {
+      const appts = e.detail;
+      if (!appts || !Array.isArray(appts)) return;
+
+      const currentTicket = appts.find((a: any) => a.id === apptSuccessTicket.id);
+      if (currentTicket) {
+        const newScanCount = currentTicket.scanCount || 0;
+        const newScannedTime = currentTicket.lastScannedAt || '';
+
+        // Play golden chime when scan event occurs
+        if (newScanCount > lastScanCount || (newScannedTime && newScannedTime !== lastScannedTime)) {
+          playRegalGoldChime();
+          setApptSuccessTicket(currentTicket);
+
+          // Flash visual pulse wave surrounding ticket to signify successful parse
+          const ticketCard = document.getElementById('printable-ticket');
+          if (ticketCard) {
+            ticketCard.classList.add('ring-4', 'ring-emerald-500/80', 'scale-[1.01]', 'duration-300');
+            setTimeout(() => {
+              ticketCard.classList.remove('ring-4', 'ring-emerald-500/80', 'scale-[1.01]');
+            }, 1200);
+          }
+        } else {
+          // Sync minor details (like status changes "Confirmed" -> "Completed" etc)
+          setApptSuccessTicket(currentTicket);
+        }
+
+        lastScanCount = newScanCount;
+        lastScannedTime = newScannedTime;
+      }
+    };
+
+    window.addEventListener('varudu-appointment-updated', handleAppointmentsChange);
+    return () => {
+      window.removeEventListener('varudu-appointment-updated', handleAppointmentsChange);
+    };
+  }, [apptSuccessTicket]);
+
   const handleCustomReviewSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const newTest: Testimonial = {
@@ -169,14 +328,20 @@ export default function App() {
 
   const handleBookApptSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const finalBranchString = apptSecondaryBranch 
+      ? `${apptBranch} (Pref 2: ${apptSecondaryBranch})`
+      : apptBranch;
+
     const apptData = {
-      branch: apptBranch,
+      branch: finalBranchString,
       date: apptDate,
       time: apptTime,
       occasion: apptOccasion,
       customerName: apptName,
       customerPhone: apptPhone,
-      customerEmail: apptEmail
+      customerEmail: apptEmail,
+      specialRequests: apptSpecialRequests.trim() || undefined
     };
 
     const newAppt = saveAppointment(apptData);
@@ -186,10 +351,12 @@ export default function App() {
     setApptPhone('');
     setApptEmail('');
     setApptDate('');
+    setApptSpecialRequests('');
     playRegalGoldChime();
 
     // Prepare robust WhatsApp text notification template to notify the showroom owner of the new appointment booking
-    const text = `*NEW SHOWROOM APPOINTMENT SELECTED*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Groom Name:* ${apptData.customerName}\n📞 *Phone Number:* ${apptData.customerPhone}\n📧 *Email:* ${apptData.customerEmail || 'None provided'}\n🏢 *Selected Showroom:* ${apptData.branch}\n📅 *Appointment Slot:* ${apptData.date} at ${apptData.time}\n🏛️ *Occasion details:* ${apptData.occasion}\n━━━━━━━━━━━━━━━━━━━━\n✨ _Logged instantly database backed with live Firebase! _`;
+    const requestsSection = apptData.specialRequests ? `\n✍️ *Special Requests:* ${apptData.specialRequests}` : '';
+    const text = `*NEW SHOWROOM APPOINTMENT SELECTED*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Groom Name:* ${apptData.customerName}\n📞 *Phone Number:* ${apptData.customerPhone}\n📧 *Email:* ${apptData.customerEmail || 'None provided'}\n🏢 *Selected Showroom:* ${apptData.branch}\n📅 *Appointment Slot:* ${apptData.date} at ${apptData.time}\n🏛️ *Occasion details:* ${apptData.occasion}${requestsSection}\n━━━━━━━━━━━━━━━━━━━━\n✨ _Logged instantly database backed with live Firebase! _`;
     const whatsappUrl = `https://wa.me/919000777265?text=${encodeURIComponent(text)}`;
     
     // Automatically open WhatsApp in background to log the appointment notification directly to owner
@@ -205,6 +372,101 @@ export default function App() {
 
   const handleExitIntentBookingTrigger = () => {
     setActiveView('appointment');
+  };
+
+  // Calendar Integration Helpers to parse and download/link calendar events
+  const parseAppointmentDateTime = (dateStr: string, timeStr: string) => {
+    try {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      let hour = 11;
+      let minute = 0;
+      
+      const timeMatch = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (timeMatch) {
+        let h = parseInt(timeMatch[1], 10);
+        const m = parseInt(timeMatch[2], 10);
+        const isPm = timeMatch[3].toUpperCase() === 'PM';
+        if (isPm && h < 12) h += 12;
+        if (!isPm && h === 12) h = 0;
+        hour = h;
+        minute = m;
+      }
+      
+      const startDate = new Date(year, month - 1, day, hour, minute);
+      const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // Default 1 hour duration
+      
+      return { startDate, endDate };
+    } catch (error) {
+      const d = new Date();
+      return { startDate: d, endDate: new Date(d.getTime() + 3600000) };
+    }
+  };
+
+  const formatToUTCString = (date: Date) => {
+    const yrs = date.getUTCFullYear();
+    const mths = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const dys = String(date.getUTCDate()).padStart(2, '0');
+    const hrs = String(date.getUTCHours()).padStart(2, '0');
+    const mins = String(date.getUTCMinutes()).padStart(2, '0');
+    const secs = String(date.getUTCSeconds()).padStart(2, '0');
+    return `${yrs}${mths}${dys}T${hrs}${mins}${secs}Z`;
+  };
+
+  const getGoogleCalendarLink = (appt: any) => {
+    if (!appt) return '#';
+    const { startDate, endDate } = parseAppointmentDateTime(appt.date, appt.time);
+    const startStr = formatToUTCString(startDate);
+    const endStr = formatToUTCString(endDate);
+    
+    const title = encodeURIComponent(`Varudu Royal Groom Fitting Room Reservation`);
+    const details = encodeURIComponent(
+      `Dear Groom,\n\nYour exclusive VIP premium fitting session has been locked.\n\n` +
+      `👤 Client: ${appt.customerName}\n` +
+      `👔 Fitting Occasion Style: ${appt.occasion}\n` +
+      `📍 Atelier Lounge Address: ${appt.branch}\n\n` +
+      `Contact Registry: +91 9000777265.\n` +
+      `We look forward to serving you with ultimate drape perfection.`
+    );
+    const location = encodeURIComponent(appt.branch);
+    
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startStr}/${endStr}&details=${details}&location=${location}`;
+  };
+
+  const downloadIcsFile = (appt: any) => {
+    if (!appt) return;
+    const { startDate, endDate } = parseAppointmentDateTime(appt.date, appt.time);
+    const startStr = formatToUTCString(startDate);
+    const endStr = formatToUTCString(endDate);
+    const nowStr = formatToUTCString(new Date());
+    
+    const icsLines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Varudu Ethnic Studio//Bespoke Registry//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:appt-${appt.id}@varuduethnic.com`,
+      `DTSTAMP:${nowStr}`,
+      `DTSTART:${startStr}`,
+      `DTEND:${endStr}`,
+      `SUMMARY:Varudu Royal Groom Fitting: ${appt.customerName}`,
+      `DESCRIPTION:Exclusive Groom Wear Trial Session to coordinate bespoke attire styling.\\n\\n📍 Lounge: ${appt.branch}\\n👔 Prep details: ${appt.occasion}`,
+      `LOCATION:${appt.branch}`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ];
+    
+    const icsString = icsLines.join('\r\n');
+    const blob = new Blob([icsString], { type: 'text/calendar;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `varudu-royal-appointment.ics`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -441,8 +703,8 @@ export default function App() {
             <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
               
               {apptSuccessTicket ? (
-                /* Ticket Success Panel */
-                <div className="bg-[#121212] border-2 border-[#C5A85D] p-8 sm:p-12 rounded-lg text-center shadow-2xl max-w-xl mx-auto">
+                /* Ticket Success Panel wrapper with print-friendly ID */
+                <div id="printable-ticket" className="bg-[#121212] border-2 border-[#C5A85D] p-8 sm:p-12 rounded-lg text-center shadow-2xl max-w-xl mx-auto relative overflow-hidden">
                   
                   <div className="w-14 h-14 bg-[#4A0E17] border border-[#C5A85D]/30 flex items-center justify-center rounded-full mx-auto mb-6">
                     <Check className="w-7 h-7 text-emerald-400" />
@@ -457,30 +719,164 @@ export default function App() {
 
                   <div className="w-12 h-[1px] bg-[#C5A85D] mx-auto my-6" />
 
-                  <div className="bg-black/60 p-5 rounded border border-white/5 text-left text-xs font-sans tracking-wide space-y-3 font-medium text-gray-300">
+                  <div className="bg-black/60 p-5 rounded border border-white/5 text-left text-xs font-sans tracking-wide space-y-3 font-medium text-gray-300 font-sans">
                     <p>🤴 *Groom Client:* <span className="text-white font-bold">{apptSuccessTicket.customerName}</span></p>
                     <p>⚓ *Selected lounge:* <span className="text-[#E5C46D]">{apptSuccessTicket.branch}</span></p>
                     <p>⏰ *Fitting clock:* <span className="text-white">{apptSuccessTicket.date} at {apptSuccessTicket.time}</span></p>
-                    <p>👔 *Gifting purpose:* {apptOccasion}</p>
+                    <p>👔 *Gifting purpose:* <span className="text-white">{apptSuccessTicket.occasion}</span></p>
+                    {apptSuccessTicket.specialRequests && (
+                      <p className="border-t border-white/10 pt-2.5 mt-2.5 text-gray-400">
+                        ✍️ *Special Requests:* <span className="text-white italic">"{apptSuccessTicket.specialRequests}"</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Luxury Digital Entry Permit & QR Code Card */}
+                  <div className="mt-6 p-5 bg-[#161618] border border-[#C5A85D]/30 rounded-lg text-center space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 border-b border-[#C5A85D]/10 pb-3">
+                      <div className="flex items-center justify-center sm:justify-start space-x-2 text-[#C5A85D] font-sans text-[10px] tracking-widest uppercase font-bold">
+                        <QrCode className="w-4 h-4 text-[#C5A85D]" />
+                        <span>Atelier Check-In QR Pass</span>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+                        {apptSuccessTicket.scanCount !== undefined && apptSuccessTicket.scanCount > 0 && (
+                          <div className="inline-flex items-center justify-center space-x-1 bg-[#C5A85D]/15 border border-[#C5A85D]/40 px-2 py-1 rounded text-[8px] uppercase tracking-[0.08em] font-sans font-bold text-[#E5C46D]">
+                            <span>Verified Scans: {apptSuccessTicket.scanCount}</span>
+                          </div>
+                     	  )}
+                        <div className="inline-flex items-center justify-center self-center sm:self-auto space-x-2 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded text-[8px] uppercase tracking-[0.12em] font-sans font-bold text-emerald-400">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                          </span>
+                          <span>Studio Scanner Ready</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* QR Code Container with High-Contrast Quiet Zone */}
+                    <div className="qr-quiet-zone inline-block p-3.5 bg-white rounded-md border-2 border-[#C5A85D]/50 shadow-lg mx-auto relative">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                          `VARUDU ATELIER RESERVATION\nID: ${apptSuccessTicket.id.replace('appt-', '')}\nGroom: ${apptSuccessTicket.customerName}\nPhone: ${apptSuccessTicket.customerPhone}\nLounge: ${apptSuccessTicket.branch}\nSlot: ${apptSuccessTicket.date} @ ${apptSuccessTicket.time}`
+                        )}`} 
+                        alt="Atelier Booking QR Code" 
+                        className="w-[140px] h-[140px] block transition-transform duration-300 hover:scale-[1.03]"
+                        referrerPolicy="no-referrer"
+                      />
+                      {/* Dynamic Scan Count Badge */}
+                      <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-[#C5A85D] text-black font-sans font-extrabold text-[9px] px-2.5 py-0.5 rounded shadow-[0_2px_8px_rgba(0,0,0,0.5)] border border-black uppercase tracking-widest whitespace-nowrap select-none">
+                        Scans: {apptSuccessTicket.scanCount || 0}
+                      </div>
+                    </div>
+
+                    {/* Interactive Action Control Center */}
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-3 no-print-element">
+                      {/* Majestic audio synchronization notice */}
+                      <div className="py-2 px-4 rounded border border-[#C5A85D]/20 bg-zinc-900/60 hover:bg-zinc-800 transition-all cursor-pointer flex items-center justify-center space-x-2 select-none"
+                           onClick={() => playRegalGoldChime()}>
+                        <Volume2 className="w-3.5 h-3.5 text-[#C5A85D] animate-pulse" />
+                        <div className="text-[9px] uppercase font-mono font-bold text-[#E5C46D] leading-none">
+                          <span>Chime Active</span>
+                          <span className="text-[8px] text-zinc-500 ml-1 font-sans">— Test Sound</span>
+                        </div>
+                      </div>
+
+                      {/* Manual Re-trigger Check-In Scan simulation hook */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            const updated = updateAppointmentScanEvent(apptSuccessTicket.id);
+                            const fresh = updated.find((a: any) => a.id === apptSuccessTicket.id);
+                            if (fresh) {
+                              setApptSuccessTicket(fresh);
+                            }
+                          } catch (e) {
+                            console.warn("Could not fire manual scan refresh:", e);
+                          }
+                        }}
+                        className="px-4 py-2 bg-[#C5A85D]/15 hover:bg-[#C5A85D]/25 hover:scale-[1.02] active:scale-[0.98] text-[9px] tracking-widest font-sans font-extrabold uppercase text-[#E5C46D] border border-[#C5A85D]/40 hover:border-[#C5A85D] rounded transition-all cursor-pointer flex items-center space-x-1.5 shadow-md"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-[#C5A85D] hover:rotate-180 transition-transform duration-700" />
+                        <span>Re-Trigger Scan Event</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="text-[10px] uppercase tracking-wider text-[#E5C46D] font-sans font-extrabold">
+                        Bespoke Booking Reference: #{apptSuccessTicket.id.replace('appt-', '')}
+                      </p>
+                      <p className="text-[9px] text-gray-400 font-sans max-w-sm mx-auto leading-normal">
+                        Showroom entry code: Present this screen or the printed ticket upon arrival. The front-desk receptionist will scan this code to retrieve your body specifications and styling records instantly.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Staff instruction sublink */}
+                  <p className="text-[10px] font-mono text-zinc-500 mt-2 text-center select-none">
+                    Staff: Scan this reference to pull up the Groom File (Measurement + Fitting History).
+                  </p>
+
+                  {/* Add to Calendar Integration Drawer (Hidden during print) */}
+                  <div className="mt-6 p-5 bg-zinc-950/80 rounded border border-[#C5A85D]/20 text-left space-y-3 shadow-lg no-print-element">
+                    <div className="flex items-center space-x-2 text-[#C5A85D] font-sans text-[10px] tracking-widest uppercase font-bold">
+                      <Calendar className="w-4 h-4 text-[#C5A85D]" />
+                      <span>Sync Fitting to Your Calendar</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 font-sans leading-relaxed">
+                      Add this exclusive appointment slot to your personal calendar to receive automatic push notifications for your upcoming draping.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                      <a
+                        href={getGoogleCalendarLink(apptSuccessTicket)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2.5 bg-[#4A0E17]/80 hover:bg-[#4A0E17] border border-[#C5A85D]/30 hover:border-[#C5A85D] text-[#E5C46D] hover:text-white font-sans text-[10px] uppercase font-bold tracking-widest rounded transition-all flex items-center justify-center space-x-1.5 cursor-pointer text-center select-none"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>Google Calendar</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => downloadIcsFile(apptSuccessTicket)}
+                        className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-sans text-[10px] uppercase font-bold tracking-widest rounded transition-all flex items-center justify-center space-x-1.5 cursor-pointer select-none"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>iCal / ICS File</span>
+                      </button>
+                    </div>
                   </div>
 
                   <p className="text-xs text-gray-400 font-serif leading-relaxed mt-6">
                     Your styling chamber has been locked. Check your phone for custom WhatsApp confirmation prompts. A stylist will reach you of any measurements checkups dynamic to your selected date.
                   </p>
 
-                  <div className="mt-8 gap-4 flex flex-col sm:flex-row justify-center">
+                  {/* Interactive Button Panel (Hidden during print) */}
+                  <div className="mt-8 gap-3 flex flex-col sm:flex-row justify-center no-print-element">
                     <a
                       href={`https://wa.me/919000777265?text=Hi%20Varudu!%20I%20have%20successfully%20reserved%20appointment%20ticket%20%23${apptSuccessTicket.id.replace('appt-', '')}.%20Please%20verify%20my%20slot%20for%20fitting.`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs uppercase font-bold tracking-widest rounded transition-transform shadow flex items-center justify-center space-x-2"
+                      className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-sans text-xs uppercase font-bold tracking-widest rounded transition-all shadow flex items-center justify-center space-x-2"
                     >
                       <MessageSquare className="w-4 h-4" />
                       <span>Verify on WhatsApp</span>
                     </a>
+                    
                     <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="px-5 py-3.5 bg-zinc-800 hover:bg-[#C5A85D] hover:text-black hover:border-[#C5A85D] text-white border border-white/10 font-sans text-xs uppercase font-bold tracking-widest rounded transition-all shadow flex items-center justify-center space-x-2 cursor-pointer"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>Print Ticket</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setApptSuccessTicket(null)}
-                      className="px-6 py-3.5 bg-transparent border border-white/10 hover:bg-white/5 text-gray-300 text-xs font-sans uppercase tracking-widest rounded"
+                      className="px-5 py-3.5 bg-transparent border border-white/10 hover:bg-white/5 text-gray-300 text-xs font-sans uppercase tracking-widest rounded cursor-pointer"
                     >
                       Reset Form
                     </button>
@@ -504,25 +900,198 @@ export default function App() {
                     </h3>
                   </div>
 
-                  <form onSubmit={handleBookApptSubmit} className="space-y-6">
+                  <motion.form 
+                    onSubmit={handleBookApptSubmit} 
+                    className="space-y-6"
+                    variants={formContainerVariants}
+                    initial="hidden"
+                    animate="show"
+                  >
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] mb-1 font-semibold">
-                          Select Flagship Atelier *
-                        </label>
-                        <select
-                          required
-                          value={apptBranch}
-                          onChange={(e) => setApptBranch(e.target.value)}
-                          className="w-full bg-black border border-white/10 text-white px-4 py-3 rounded text-sm font-sans focus:outline-none focus:border-[#C5A85D]"
-                        >
-                          <option value="Chaitanyapuri Studio - Kothapet">Chaitanyapuri Studio - Kothapet</option>
-                          <option value="Secunderabad Lounge - Thirumalagiri">Secunderabad Lounge - Thirumalagiri</option>
-                        </select>
-                      </div>
+                      <motion.div variants={formItemVariants} className="sm:col-span-2 space-y-3 p-4 bg-zinc-950/80 border border-[#C5A85D]/15 rounded-md">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-white/5 pb-2">
+                          <label className="block text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] font-bold">
+                            Atelier Showroom Preferences *
+                          </label>
+                          
+                          {/* Geolocation Trigger & Proximity Info Badge */}
+                          <div className="flex items-center text-[10px] font-sans">
+                            {geoLoading ? (
+                              <span className="text-amber-400 flex items-center animate-pulse font-semibold">
+                                <Navigation className="w-3 h-3 mr-1 animate-spin" />
+                                Detecting nearest showroom...
+                              </span>
+                            ) : geoSuccessMsg ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-emerald-400 flex items-center bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 font-medium">
+                                  <MapPin className="w-3 h-3 mr-1 text-emerald-400 shrink-0 animate-ping" style={{ animationDuration: '3s' }} />
+                                  <span>📍 GPS Selected: {geoSuccessMsg}</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={autoDetectNearestStudio}
+                                  className="text-[#C5A85D] hover:text-white text-[9px] underline uppercase tracking-wider ml-1 cursor-pointer"
+                                >
+                                  Re-Scan
+                                </button>
+                              </div>
+                            ) : geoError ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={autoDetectNearestStudio}
+                                  className="text-amber-400 hover:text-white flex items-center transition-colors underline decoration-dotted cursor-pointer text-left font-semibold"
+                                  title={geoError}
+                                >
+                                  <Navigation className="w-3 h-3 mr-1" />
+                                  GPS blocked: click to retry
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={autoDetectNearestStudio}
+                                className="text-gray-400 hover:text-[#C5A85D] flex items-center transition-colors font-semibold cursor-pointer"
+                              >
+                                <Navigation className="w-3 h-3 mr-1" />
+                                Auto-Detect Nearest
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Card 1: Chaitanyapuri */}
+                          <div 
+                            onClick={() => {
+                              if (!apptMultiSelect) {
+                                setApptBranch('Chaitanyapuri Studio - Kothapet');
+                                setApptSecondaryBranch('');
+                              } else {
+                                if (apptBranch === 'Chaitanyapuri Studio - Kothapet') {
+                                  // toggle roles
+                                  if (apptSecondaryBranch === 'Chaitanyapuri Studio - Kothapet') {
+                                    setApptSecondaryBranch('');
+                                  } else {
+                                    setApptBranch('Secunderabad Lounge - Thirumalagiri');
+                                    setApptSecondaryBranch('Chaitanyapuri Studio - Kothapet');
+                                  }
+                                } else {
+                                  setApptBranch('Chaitanyapuri Studio - Kothapet');
+                                  setApptSecondaryBranch('Secunderabad Lounge - Thirumalagiri');
+                                }
+                              }
+                            }}
+                            className={`p-3.5 rounded border transition-all duration-300 cursor-pointer ${
+                              apptBranch === 'Chaitanyapuri Studio - Kothapet'
+                                ? 'border-[#C5A85D] bg-[#C5A85D]/10 text-white shadow-md shadow-[#C5A85D]/5'
+                                : apptSecondaryBranch === 'Chaitanyapuri Studio - Kothapet'
+                                ? 'border-[#C5A85D]/50 border-dashed bg-amber-500/5 text-amber-100 hover:border-[#C5A85D]'
+                                : 'border-white/5 bg-black/40 text-gray-500 hover:border-white/10 hover:text-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`font-sans font-bold text-xs uppercase tracking-wider ${
+                                apptBranch === 'Chaitanyapuri Studio - Kothapet' || apptSecondaryBranch === 'Chaitanyapuri Studio - Kothapet'
+                                  ? 'text-white'
+                                  : 'text-gray-400'
+                              }`}>Kothapet Studio</span>
+                              {apptBranch === 'Chaitanyapuri Studio - Kothapet' && (
+                                <span className="bg-[#C5A85D] text-black font-sans text-[8px] font-bold uppercase px-2 py-0.5 rounded tracking-widest">
+                                  Primary
+                                </span>
+                              )}
+                              {apptSecondaryBranch === 'Chaitanyapuri Studio - Kothapet' && (
+                                <span className="bg-[#4A0E17]/80 text-[#E5C46D] border border-dashed border-[#C5A85D]/40 font-sans text-[8px] font-bold uppercase px-2 py-0.5 rounded tracking-widest">
+                                  Secondary
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-400 font-serif mt-1.5 leading-relaxed">
+                              Chaitanyapuri Studio, NTR Nagar. (Dedicated Valet)
+                            </p>
+                          </div>
 
-                      <div>
+                          {/* Card 2: Secunderabad */}
+                          <div 
+                            onClick={() => {
+                              if (!apptMultiSelect) {
+                                setApptBranch('Secunderabad Lounge - Thirumalagiri');
+                                setApptSecondaryBranch('');
+                              } else {
+                                if (apptBranch === 'Secunderabad Lounge - Thirumalagiri') {
+                                  if (apptSecondaryBranch === 'Secunderabad Lounge - Thirumalagiri') {
+                                    setApptSecondaryBranch('');
+                                  } else {
+                                    setApptBranch('Chaitanyapuri Studio - Kothapet');
+                                    setApptSecondaryBranch('Secunderabad Lounge - Thirumalagiri');
+                                  }
+                                } else {
+                                  setApptBranch('Secunderabad Lounge - Thirumalagiri');
+                                  setApptSecondaryBranch('Chaitanyapuri Studio - Kothapet');
+                                }
+                              }
+                            }}
+                            className={`p-3.5 rounded border transition-all duration-300 cursor-pointer ${
+                              apptBranch === 'Secunderabad Lounge - Thirumalagiri'
+                                ? 'border-[#C5A85D] bg-[#C5A85D]/10 text-white shadow-md shadow-[#C5A85D]/5'
+                                : apptSecondaryBranch === 'Secunderabad Lounge - Thirumalagiri'
+                                ? 'border-[#C5A85D]/50 border-dashed bg-amber-500/5 text-amber-100 hover:border-[#C5A85D]'
+                                : 'border-white/5 bg-black/40 text-gray-500 hover:border-white/10 hover:text-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`font-sans font-bold text-xs uppercase tracking-wider ${
+                                apptBranch === 'Secunderabad Lounge - Thirumalagiri' || apptSecondaryBranch === 'Secunderabad Lounge - Thirumalagiri'
+                                  ? 'text-white'
+                                  : 'text-gray-400'
+                              }`}>Secunderabad Lounge</span>
+                              {apptBranch === 'Secunderabad Lounge - Thirumalagiri' && (
+                                <span className="bg-[#C5A85D] text-black font-sans text-[8px] font-bold uppercase px-2 py-0.5 rounded tracking-widest">
+                                  Primary
+                                </span>
+                              )}
+                              {apptSecondaryBranch === 'Secunderabad Lounge - Thirumalagiri' && (
+                                <span className="bg-[#4A0E17]/80 text-[#E5C46D] border border-dashed border-[#C5A85D]/40 font-sans text-[8px] font-bold uppercase px-2 py-0.5 rounded tracking-widest">
+                                  Secondary
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-400 font-serif mt-1.5 leading-relaxed">
+                              Thirumalagiri Opposite Petrol Pump. (Dedicated Parking)
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Flex Preference Checkbox */}
+                        <div className="flex items-center space-x-2 pt-1">
+                          <input 
+                            type="checkbox"
+                            id="appt-multi-select-toggle"
+                            checked={apptMultiSelect}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setApptMultiSelect(checked);
+                              if (checked) {
+                                if (apptBranch === 'Chaitanyapuri Studio - Kothapet') {
+                                  setApptSecondaryBranch('Secunderabad Lounge - Thirumalagiri');
+                                } else {
+                                  setApptSecondaryBranch('Chaitanyapuri Studio - Kothapet');
+                                }
+                              } else {
+                                setApptSecondaryBranch('');
+                              }
+                            }}
+                            className="accent-[#C5A85D] cursor-pointer w-3.5 h-3.5"
+                          />
+                          <label htmlFor="appt-multi-select-toggle" className="text-[10px] uppercase font-sans tracking-widest text-[#E5C46D] font-bold cursor-pointer select-none">
+                            💫 Select second branch as fallback (Doubles chances for busy season)
+                          </label>
+                        </div>
+                      </motion.div>
+
+                      <motion.div variants={formItemVariants} className="sm:col-span-2">
                         <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1 font-semibold">
                           Groom Wear Occasion *
                         </label>
@@ -537,11 +1106,11 @@ export default function App() {
                           <option value="Haldi daytime kurta sizing">Haldi daytime kurta sizing</option>
                           <option value="Full Groom Accessory Custom Box match">Full Groom Accessory Custom Box match</option>
                         </select>
-                      </div>
+                      </motion.div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div>
+                      <motion.div variants={formItemVariants}>
                         <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1 font-semibold">
                           Select Calendar Date *
                         </label>
@@ -552,9 +1121,9 @@ export default function App() {
                           onChange={(e) => setApptDate(e.target.value)}
                           className="w-full bg-black border border-white/10 text-white px-4 py-3 rounded text-sm font-sans focus:outline-none focus:border-[#C5A85D]"
                         />
-                      </div>
+                      </motion.div>
 
-                      <div>
+                      <motion.div variants={formItemVariants}>
                         <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1 font-semibold">
                           Preferred Hour Slot *
                         </label>
@@ -570,9 +1139,9 @@ export default function App() {
                           <option value="05:00 PM">05:00 PM (High Tea Session)</option>
                           <option value="07:00 PM">07:00 PM</option>
                         </select>
-                      </div>
+                      </motion.div>
 
-                      <div>
+                      <motion.div variants={formItemVariants}>
                         <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1 font-semibold">
                           Groom Name *
                         </label>
@@ -584,11 +1153,11 @@ export default function App() {
                           placeholder="Your Name"
                           className="w-full bg-black border border-white/10 text-white px-4 py-3 rounded text-sm font-sans focus:outline-none focus:border-[#C5A85D] placeholder:text-gray-700"
                         />
-                      </div>
+                      </motion.div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
+                      <motion.div variants={formItemVariants}>
                         <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1 font-semibold">
                           WhatsApp Contact Phone *
                         </label>
@@ -600,9 +1169,9 @@ export default function App() {
                           placeholder="e.g. +91 99000 88888"
                           className="w-full bg-black border border-white/10 text-white px-4 py-3 rounded text-sm font-sans focus:outline-none focus:border-[#C5A85D] placeholder:text-gray-700"
                         />
-                      </div>
+                      </motion.div>
 
-                      <div>
+                      <motion.div variants={formItemVariants}>
                         <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1 font-semibold">
                           Preferred Email *
                         </label>
@@ -614,19 +1183,32 @@ export default function App() {
                           placeholder="wedding@groom.com"
                           className="w-full bg-black border border-white/10 text-white px-4 py-3 rounded text-sm font-sans focus:outline-none focus:border-[#C5A85D] placeholder:text-gray-700"
                         />
-                      </div>
+                      </motion.div>
                     </div>
 
-                    <div className="text-center pt-4">
+                    <motion.div variants={formItemVariants} className="space-y-1">
+                      <label className="block text-[10px] uppercase font-sans tracking-widest text-gray-300 mb-1 font-semibold">
+                        Special Styling Requests & Fabric Concerns (Optional)
+                      </label>
+                      <textarea
+                        value={apptSpecialRequests}
+                        onChange={(e) => setApptSpecialRequests(e.target.value)}
+                        placeholder="Detail specific style elements, custom silhouettes, accessory expectations, wedding theme colors, or sensitive skin/fabric specifications..."
+                        rows={3}
+                        className="w-full bg-black border border-white/10 text-white px-4 py-3 rounded text-sm font-sans focus:outline-none focus:border-[#C5A85D] placeholder:text-gray-700 resize-none"
+                      />
+                    </motion.div>
+
+                    <motion.div variants={formItemVariants} className="text-center pt-4">
                       <button
                         type="submit"
                         className="w-full py-4 bg-gradient-to-r from-[#C5A85D] to-[#E5C46D] text-black font-sans font-bold text-xs uppercase tracking-[0.2em] rounded transition-transform cursor-pointer hover:scale-[1.01]"
                       >
                         Secure VIP Stylist Chamber
                       </button>
-                    </div>
+                    </motion.div>
 
-                  </form>
+                  </motion.form>
                 </div>
               )}
 

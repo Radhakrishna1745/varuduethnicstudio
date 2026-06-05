@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Volume2, VolumeX, Sparkles, SkipForward, Swords, Film, Upload } from 'lucide-react';
-import { playRegalGoldChime, getCachedSetting } from '../utils';
+import { playRegalGoldChime, getCachedSetting, hasSettingsLoaded } from '../utils';
 
 interface SplashIntroProps {
   onComplete: () => void;
@@ -23,9 +23,15 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
 
   useEffect(() => {
     let active = true;
+    let fallbackTimeout: any = null;
+    let didInitialize = false;
 
     // Attempt to load the custom video logo from Firebase Storage
     async function loadCustomVideo() {
+      if (didInitialize) return;
+      didInitialize = true;
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+
       try {
         const firebaseVideoUrl = getCachedSetting('brand', 'brand_logo_video', '');
         const videoStatus = getCachedSetting('brand', 'brand_logo_video_status', 'active');
@@ -71,32 +77,27 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
         }
       }
     }
-    loadCustomVideo();
 
-    const handleSettingsUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const settings = customEvent.detail;
-      if (settings && settings.brand) {
-        const videoStatus = settings.brand.brand_logo_video_status || 'active';
-        if (settings.brand.brand_logo_video && videoStatus !== 'disabled') {
-          if (active) {
-            setVideoBlobUrl(settings.brand.brand_logo_video);
-            setHasVideo(true);
-          }
-        } else {
-          if (active) {
-            setVideoBlobUrl(null);
-            setHasVideo(false);
-          }
-        }
-      }
+    const handleSettingsUpdate = () => {
+      loadCustomVideo();
     };
 
-    window.addEventListener('varudu-settings-updated', handleSettingsUpdate as EventListener);
+    if (hasSettingsLoaded()) {
+      loadCustomVideo();
+    } else {
+      window.addEventListener('varudu-settings-updated', handleSettingsUpdate as EventListener);
+      fallbackTimeout = setTimeout(() => {
+        if (active) {
+          loadCustomVideo();
+        }
+      }, 1200);
+    }
+
     window.addEventListener('varudu-photo-updated', loadCustomVideo);
 
     return () => {
       active = false;
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
       window.removeEventListener('varudu-settings-updated', handleSettingsUpdate as EventListener);
       window.removeEventListener('varudu-photo-updated', loadCustomVideo);
     };

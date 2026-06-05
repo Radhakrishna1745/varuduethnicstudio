@@ -126,3 +126,95 @@
 .maroon-glow-bg {
   animation: maroon-glow 8s ease-in-out infinite;
 }
+
+/* Elegant Print Stylesheet */
+@media print {
+  /* Force system print setting background compatibility where checked */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: Georgia, serif !important;
+  }
+
+  /* Hide headers, footers, side buttons, interactive features, popups, and the rest of layout */
+  header, footer, nav, button, a, 
+  #showroom-locations, #featured-collections-desk, 
+  #exit-intent-popup, #recent-inquiry-toast,
+  .no-print, .no-print-element {
+    display: none !important;
+  }
+
+  /* Target outer components to guarantee no excess pages */
+  #root > header, #root > footer, #root > div.fixed, #root > div.no-print {
+    display: none !important;
+  }
+
+  /* Hide sibling layouts of the booking container */
+  main > *:not(#appointment-booking-page) {
+    display: none !important;
+  }
+
+  #appointment-booking-page {
+    background: #ffffff !important;
+    padding: 0 !important;
+    border: none !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #appointment-booking-page > div {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Style the Ticket container as a beautiful standalone card */
+  #printable-ticket {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 3px double #C5A85D !important;
+    box-shadow: none !important;
+    padding: 3rem !important;
+    margin: 1.5rem auto !important;
+    max-width: 600px !important;
+    display: block !important;
+    border-radius: 0px !important;
+    page-break-inside: avoid;
+  }
+
+  #printable-ticket * {
+    color: #000000 !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #printable-ticket .text-white {
+    color: #000000 !important;
+  }
+
+  #printable-ticket .text-\[\#C5A85D\],
+  #printable-ticket .text-\[\#E5C46D\] {
+    color: #8c6e26 !important; /* Gold in print gray-tones */
+  }
+
+  #printable-ticket .border-2 {
+    border-width: 3px !important;
+    border-style: double !important;
+    border-color: #C5A85D !important;
+  }
+
+  #printable-ticket .bg-black\/60 {
+    background: #f9f9f9 !important;
+    border: 1px solid #777777 !important;
+  }
+
+  #printable-ticket .w-14 {
+    border-color: #C5A85D !important;
+    background-color: #f7f7f7 !important;
+  }
+
+  #printable-ticket .w-12 {
+    border-top: 1px solid #C5A85D !important;
+    height: 1px !important;
+  }
+}
