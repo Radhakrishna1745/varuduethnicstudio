@@ -38,7 +38,9 @@
         "customerEmail": { "type": "string" },
         "status": { "type": "string" },
         "timestamp": { "type": "string" },
-        "adminNotes": { "type": "string" }
+        "adminNotes": { "type": "string" },
+        "scanCount": { "type": "number", "description": "Number of times this ticket has been scanned by the camera" },
+        "lastScannedAt": { "type": "string", "description": "ISO timestamp for when the ticket was last scanned" }
       },
       "required": ["id", "branch", "date", "time", "customerName", "customerPhone", "status", "timestamp"]
     },

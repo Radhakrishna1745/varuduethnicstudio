@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import jsQR from 'jsqr';
 import { CustomerLead, Appointment, ProductCollection, LookbookItem, HeroBanner, StaticPhoto, StaticPhotoKey, GroomVideo } from '../types';
 import { 
   getStoredLeads, updateLeadStatus, deleteLead, deleteMultipleLeads,
   getStoredAppointments, updateAppointmentStatus, deleteAppointment, updateAppointmentScanEvent,
-  playRegalGoldChime,
+  playRegalGoldChime, forceRefreshCRMData,
   getDynamicCollections, saveDynamicCollections,
   getDynamicLookbook, saveDynamicLookbook,
   getDynamicGroomVideos, saveDynamicGroomVideos,
@@ -50,7 +51,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [isAuthPending, setIsAuthPending] = useState(false);
 
   // Active Tab
-  const [crmTab, setCrmTab] = useState<'leads' | 'appointments' | 'analytics' | 'media' | 'banners' | 'reels'>('leads');
+  const [crmTab, setCrmTab] = useState<'leads' | 'appointments' | 'analytics' | 'media' | 'banners' | 'reels' | 'qr-scanner'>('media');
   const [refreshCounter, setRefreshCounter] = useState(0);
 
   // --- GROOM REELS / VIDEOS STATE ENGINE ---
@@ -72,6 +73,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
   // Leads & Appointments States
   const [leads, setLeads] = useState<CustomerLead[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+
+  const handleManualForceSync = async () => {
+    if (isManualSyncing) return;
+    try {
+      setIsManualSyncing(true);
+      const synced = await forceRefreshCRMData();
+      setLeads(synced.leads);
+      setAppointments(synced.appointments);
+      // Play a satisfying feedback chime
+      playRegalGoldChime();
+    } catch (err) {
+      console.error('Manual Firestore Sync Error:', err);
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
+
   const [appointmentViewType, setAppointmentViewType] = useState<'list' | 'calendar'>('list');
   const [calendarDate, setCalendarDate] = useState<Date>(new Date());
 
@@ -82,6 +101,15 @@ export default function AdminCRM({ onClose }: CRMProps) {
   const [lastScannedPayload, setLastScannedPayload] = useState<string>('');
   const [isQrCameraActive, setIsQrCameraActive] = useState(false);
   const [isScanningLaser, setIsScanningLaser] = useState(false);
+
+  // Dedicated Camera QR Scanner States and References
+  const qrVideoRef = useRef<HTMLVideoElement | null>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [qrDevices, setQrDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedQrDeviceId, setSelectedQrDeviceId] = useState<string>('');
+  const [qrScanningError, setQrScanningError] = useState<string>('');
+  const [cooldownActive, setCooldownActive] = useState(false);
+  const [lastDecodedText, setLastDecodedText] = useState<string>('');
   
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -1060,20 +1088,45 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
   // Load and subscribe to real-time events on same window
   useEffect(() => {
-    // Load stored brand video logo preview
-    async function loadStoredVideo() {
-      try {
-        const cachedUrl = getCachedSetting('brand', 'brand_logo_video', '');
-        if (cachedUrl) {
-          setAdminVideoUrl(cachedUrl);
+    const applyLoadedSettings = (settings: Record<string, any>) => {
+      if (settings?.brand) {
+        if (settings.brand.sound_effects_disabled !== undefined) {
+          setSoundEffectsDisabled(settings.brand.sound_effects_disabled === 'true');
         }
-      } catch (e) {
-        console.warn('Error reading from brand video logo:', e);
+        if (settings.brand.intro_duration !== undefined) {
+          setIntroDuration(settings.brand.intro_duration);
+        }
+        if (settings.brand.brand_logo_video_status !== undefined) {
+          setLogoVideoStatus(settings.brand.brand_logo_video_status as 'active' | 'disabled');
+        }
+        if (settings.brand.brand_logo_video !== undefined) {
+          setAdminVideoUrl(settings.brand.brand_logo_video || null);
+        }
       }
-    }
-    loadStoredVideo();
+      if (settings?.cloudinary) {
+        if (settings.cloudinary.cloud_name !== undefined) {
+          setCloudinaryCloudName(settings.cloudinary.cloud_name);
+        }
+        if (settings.cloudinary.upload_preset !== undefined) {
+          setCloudinaryUploadPreset(settings.cloudinary.upload_preset);
+        }
+      }
+    };
 
-    // Load Cloudinary config
+    // 1. Initial Load from current memory cache
+    const initialSound = getCachedSetting('brand', 'sound_effects_disabled', 'false') === 'true';
+    const initialDuration = getCachedSetting('brand', 'intro_duration', '7');
+    const initialVideoStatus = getCachedSetting('brand', 'brand_logo_video_status', 'active') as 'active' | 'disabled';
+    const initialBrandVideo = getCachedSetting('brand', 'brand_logo_video', '');
+
+    setSoundEffectsDisabled(initialSound);
+    setIntroDuration(initialDuration);
+    setLogoVideoStatus(initialVideoStatus);
+    if (initialBrandVideo) {
+      setAdminVideoUrl(initialBrandVideo);
+    }
+
+    // 2. Load Cloudinary credentials initially
     async function loadCloudinary() {
       try {
         const config = await getCloudinaryConfig();
@@ -1085,7 +1138,17 @@ export default function AdminCRM({ onClose }: CRMProps) {
     }
     loadCloudinary();
 
+    // 3. Reactively subscribe to real-time settings cache updates
+    const handleSettingsUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const settings = customEvent.detail;
+      applyLoadedSettings(settings);
+    };
+
+    window.addEventListener('varudu-settings-updated', handleSettingsUpdate);
+
     return () => {
+      window.removeEventListener('varudu-settings-updated', handleSettingsUpdate);
       if (adminVideoUrl && !adminVideoUrl.startsWith('http')) {
         try {
           URL.revokeObjectURL(adminVideoUrl);
@@ -1366,7 +1429,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
       async () => {
         try {
           const videoUrlToDelete = adminVideoUrl;
-          await saveSetting('brand', { brand_logo_video: "" });
+          await saveSetting('brand', { brand_logo_video: "", brand_logo_video_status: "disabled" });
           try {
             if (videoUrlToDelete) {
               await deleteFromStorage(videoUrlToDelete);
@@ -1382,6 +1445,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
           }
           setAdminVideoUrl(null);
           setAdminVideoBlob(null);
+          setLogoVideoStatus('disabled');
           setMediaUploadSuccess('Custom brand video cleared. The site will now revert to the beautiful gold particles CSS intro.');
           playRegalGoldChime();
         } catch (e) {
@@ -1417,14 +1481,24 @@ export default function AdminCRM({ onClose }: CRMProps) {
       playRegalGoldChime();
     };
 
+    const handleLeadUpdated = () => {
+      setLeads(getStoredLeads());
+    };
+
+    const handleApptUpdated = () => {
+      setAppointments(getStoredAppointments());
+    };
+
     window.addEventListener('varudu-lead-submitted', handleNewLead);
-    window.addEventListener('varudu-lead-updated', () => setLeads(getStoredLeads()));
+    window.addEventListener('varudu-lead-updated', handleLeadUpdated);
     window.addEventListener('varudu-appointment-booked', handleNewAppt);
-    window.addEventListener('varudu-appointment-updated', () => setAppointments(getStoredAppointments()));
+    window.addEventListener('varudu-appointment-updated', handleApptUpdated);
 
     return () => {
       window.removeEventListener('varudu-lead-submitted', handleNewLead);
+      window.removeEventListener('varudu-lead-updated', handleLeadUpdated);
       window.removeEventListener('varudu-appointment-booked', handleNewAppt);
+      window.removeEventListener('varudu-appointment-updated', handleApptUpdated);
     };
   }, []);
 
@@ -1542,6 +1616,192 @@ export default function AdminCRM({ onClose }: CRMProps) {
     if (scannedAppointment && scannedAppointment.id === apptId) {
       setScannedAppointment(prev => prev ? { ...prev, status: newStatus } : null);
     }
+  };
+
+  const handleSaveApptNote = (apptId: string, notes: string) => {
+    const appt = appointments.find(a => a.id === apptId);
+    if (!appt) return;
+    const updated = updateAppointmentStatus(apptId, appt.status, notes);
+    setAppointments(updated);
+  };
+
+  // Dedicated Camera scanning handler
+  const handleDecodedCode = (scannedText: string) => {
+    if (cooldownActive) return;
+    if (scannedText === lastDecodedText) return; // avoid immediate repeat scan
+
+    setLastDecodedText(scannedText);
+    setCooldownActive(true);
+    
+    // Process the QR string: play chime, updates scanCount on database, sets scanned appointment
+    handleProcessQRString(scannedText);
+
+    // Release scan cooldown after 3 seconds
+    setTimeout(() => {
+      setCooldownActive(false);
+    }, 3000);
+  };
+
+  // Enumerate video devices
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+      navigator.mediaDevices.enumerateDevices().then(devices => {
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        setQrDevices(videoDevices);
+        if (videoDevices.length > 0 && !selectedQrDeviceId) {
+          setSelectedQrDeviceId(videoDevices[0].deviceId);
+        }
+      }).catch(err => {
+        console.warn("Failed to list camera devices:", err);
+      });
+    }
+  }, [crmTab]);
+
+  // Hook up camera stream and jsQR canvas reader
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let animationId: number | null = null;
+    let isActive = true;
+
+    if (crmTab === 'qr-scanner' && isQrCameraActive) {
+      setQrScanningError('');
+      const constraints: MediaStreamConstraints = {
+        video: selectedQrDeviceId ? { deviceId: { exact: selectedQrDeviceId } } : { facingMode: 'environment' }
+      };
+
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then(mediaStream => {
+          stream = mediaStream;
+          if (qrVideoRef.current && isActive) {
+            qrVideoRef.current.srcObject = mediaStream;
+            qrVideoRef.current.setAttribute('playsinline', 'true'); // Required for iOS
+            qrVideoRef.current.play().catch(e => console.warn("Video play error:", e));
+            
+            // Start decoding frames
+            startDecodingLoop();
+          }
+        })
+        .catch(err => {
+          console.error("Camera access failed:", err);
+          setQrScanningError(err.message || "Failed to access camera. Please check permissions.");
+        });
+    }
+
+    function startDecodingLoop() {
+      const canvas = qrCanvasRef.current;
+      const video = qrVideoRef.current;
+      if (!canvas || !video) return;
+
+      const context = canvas.getContext('2d');
+      if (!context) return;
+
+      let lastProcessedTime = 0;
+
+      const tick = () => {
+        if (!isActive || !isQrCameraActive || crmTab !== 'qr-scanner') return;
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          
+          const now = Date.now();
+          // Decodes every 200ms to avoid high CPU usage
+          if (now - lastProcessedTime > 200) {
+            lastProcessedTime = now;
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: "dontInvert",
+            });
+
+            if (code && code.data) {
+              handleDecodedCode(code.data);
+            }
+          }
+        }
+        animationId = requestAnimationFrame(tick);
+      };
+
+      animationId = requestAnimationFrame(tick);
+    }
+
+    return () => {
+      isActive = false;
+      if (animationId) cancelAnimationFrame(animationId);
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [crmTab, isQrCameraActive, selectedQrDeviceId]);
+
+  const handleExportAppointmentsToCsv = () => {
+    // Generate headers for record-keeping
+    const headers = [
+      'Appointment ID',
+      'Groom Name',
+      'Phone',
+      'Email',
+      'Showroom / Lounge',
+      'Slot Date',
+      'Slot Time',
+      'Occasion',
+      'Special Requests',
+      'Status',
+      'Total Scans',
+      'Last Scanned Time',
+      'Request Raised Date'
+    ];
+
+    const rows = filteredAppointments.map(appt => {
+      const ticketId = appt.id.replace('appt-', '');
+      const raisedDate = appt.timestamp 
+        ? new Date(appt.timestamp).toISOString() 
+        : 'Initial Seeding';
+      const lastScanned = appt.lastScannedAt 
+        ? new Date(Number(appt.lastScannedAt)).toISOString() 
+        : 'Never';
+
+      return [
+        ticketId,
+        appt.customerName || '',
+        appt.customerPhone || '',
+        appt.customerEmail || '',
+        appt.branch || '',
+        appt.date || '',
+        appt.time || '',
+        appt.occasion || '',
+        appt.specialRequests || '',
+        appt.status || 'Pending',
+        appt.scanCount !== undefined ? appt.scanCount : 0,
+        lastScanned,
+        raisedDate
+      ];
+    });
+
+    // Handle CSV escaping for safety
+    const escapeCsvValue = (val: any) => {
+      const stringified = String(val ?? '');
+      if (stringified.includes(',') || stringified.includes('"') || stringified.includes('\n') || stringified.includes('\r')) {
+        return `"${stringified.replace(/"/g, '""')}"`;
+      }
+      return stringified;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsvValue).join(','),
+      ...rows.map(row => row.map(escapeCsvValue).join(','))
+    ].join('\r\n');
+
+    // Generate blob and trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `varudu_atelier_appointments_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleProcessQRString = (rawText: string) => {
@@ -2035,6 +2295,438 @@ export default function AdminCRM({ onClose }: CRMProps) {
     );
   }
 
+  // Dedicated QR Scanner View
+  const renderAdminQrScannerPane = () => {
+    // Dynamically query scanned history from appointments in real-time
+    const scannedHistory = appointments
+      .filter(a => a.scanCount !== undefined && a.scanCount > 0)
+      .sort((a, b) => {
+        const timeA = a.lastScannedAt ? Number(a.lastScannedAt) : 0;
+        const timeB = b.lastScannedAt ? Number(b.lastScannedAt) : 0;
+        return timeB - timeA;
+      });
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        {/* Left Column: Live camera viewport & simulation controls */}
+        <div className="lg:col-span-6 space-y-6">
+          <div className="bg-[#121212] border border-white/5 rounded-lg p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center space-x-2">
+                <Camera className="w-5 h-5 text-[#C5A85D]" />
+                <h3 className="text-sm font-sans font-semibold text-white uppercase tracking-wider">
+                  Live Camera Scanner Feed
+                </h3>
+              </div>
+              <div className="flex items-center space-x-1">
+                <span className={`inline-block w-2 h-2 rounded-full ${isQrCameraActive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                <span className="text-[9px] text-zinc-400 font-mono uppercase tracking-widest">
+                  {isQrCameraActive ? 'Camera Active' : 'Feed Closed'}
+                </span>
+              </div>
+            </div>
+
+            {/* Video Feed Box with Laser Target Animation */}
+            <div className="relative aspect-video rounded-lg overflow-hidden bg-black/80 border border-white/10 flex flex-col items-center justify-center group shadow-2xl">
+              {isQrCameraActive ? (
+                <>
+                  <video
+                    ref={qrVideoRef}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  {/* Invisible Canvas for extracting frame pixel data */}
+                  <canvas ref={qrCanvasRef} className="hidden" />
+
+                  {/* High Tech Crosshair overlay */}
+                  <div className="absolute inset-8 border border-dashed border-white/20 rounded pointer-events-none z-10 flex items-center justify-center">
+                    <div className="w-16 h-16 border-2 border-[#C5A85D] rounded-lg opacity-40 animate-pulse" />
+                  </div>
+
+                  {/* Laser Scan line animation */}
+                  {!cooldownActive && (
+                    <div className="absolute left-0 right-0 h-[3px] bg-[#C5A85D]/80 shadow-[0_0_15px_#C5A85D] z-10 pointer-events-none animate-[scanLaser_2.5s_infinite_linear]" />
+                  )}
+
+                  {/* Gold frame corner brackets */}
+                  <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-[#C5A85D] pointer-events-none" />
+                  <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-[#C5A85D] pointer-events-none" />
+                  <div className="absolute bottom-3 left-3 w-4 h-4 border-b-2 border-l-2 border-[#C5A85D] pointer-events-none" />
+                  <div className="absolute bottom-3 right-3 w-4 h-4 border-b-2 border-r-2 border-[#C5A85D] pointer-events-none" />
+
+                  {/* Cooldown Success Indicator */}
+                  {cooldownActive && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="absolute inset-0 bg-emerald-950/90 z-20 flex flex-col items-center justify-center p-4 text-center"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center mb-2 animate-bounce">
+                        <Check className="w-5 h-5 text-emerald-400" />
+                      </div>
+                      <p className="text-[#C5A85D] font-serif uppercase tracking-widest text-xs font-semibold">
+                        TICKET READ SUCCESSFUL
+                      </p>
+                      <p className="text-[10px] text-zinc-400 mt-1 max-w-xs font-sans">
+                        Check-in records synchronization updated. Pausing scanner for 3s cooldown...
+                      </p>
+                    </motion.div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center space-y-4 p-6 text-center z-10">
+                  <div className="w-16 h-16 rounded-full bg-[#1A1A1A] border border-white/10 flex items-center justify-center text-[#C5A85D]">
+                    <QrCode className="w-8 h-8 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="text-zinc-300 font-sans text-xs uppercase tracking-wider font-semibold">
+                      Camera Stream Off
+                    </h4>
+                    <p className="text-[10px] text-zinc-500 mt-1 max-w-xs leading-relaxed font-sans">
+                      Start the video scanner feed to automatically decode VIP ticket QR codes through your device camera.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsQrCameraActive(true)}
+                    className="px-4 py-2 bg-[#C5A85D] hover:bg-[#E5C46D] text-black text-[10px] sm:text-xs uppercase font-sans font-bold tracking-widest rounded shadow cursor-pointer transition-all active:scale-95"
+                  >
+                    Start Scanner
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Error Overlay */}
+            {qrScanningError && (
+              <div className="p-3 bg-red-950/20 border border-red-500/30 rounded text-red-200 text-xs flex items-start space-x-2 font-sans">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold block font-sans">Capture Ingress Error:</span>
+                  <span className="text-[10px] text-red-300 block">{qrScanningError}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Device selector and manual shut-off row */}
+            {isQrCameraActive && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-mono block mb-1">
+                    Select Input Camera Device
+                  </label>
+                  <select
+                    value={selectedQrDeviceId}
+                    onChange={(e) => setSelectedQrDeviceId(e.target.value)}
+                    className="w-full bg-black text-[10px] text-zinc-300 uppercase tracking-wider border border-white/10 rounded px-2.5 py-1.5 focus:outline-none focus:border-[#C5A85D]"
+                  >
+                    {qrDevices.length > 0 ? (
+                      qrDevices.map((device, i) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Camera Source ${i + 1}`}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Default Environment Lens</option>
+                    )}
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsQrCameraActive(false);
+                      setQrScanningError('');
+                    }}
+                    className="w-full flex items-center justify-center p-2 bg-zinc-900 border border-white/5 hover:bg-black text-[10px] font-sans text-gray-400 hover:text-white uppercase tracking-widest rounded shadow cursor-pointer transition-all"
+                  >
+                    Disable Camera
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Quick-Click Simulator (Sandbox Fallback) */}
+          <div className="bg-[#121212] border border-white/5 rounded-lg p-5 space-y-4">
+            <div className="flex items-center space-x-2 border-b border-white/5 pb-3">
+              <Settings className="w-4 h-4 text-[#C5A85D]" />
+              <h3 className="text-sm font-sans font-semibold text-white uppercase tracking-wider">
+                Atelier Physical Scanner Simulator
+              </h3>
+            </div>
+            
+            <p className="text-[11px] text-zinc-400 font-serif leading-relaxed">
+              If a physical web-camera is unavailable or disabled, click any logged VIP Groom booking below to trigger a mock QR code swipe. This will play sound feedback and update the scan check-in count on the database:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
+              {appointments.slice(0, 8).map(appt => (
+                <button
+                  type="button"
+                  key={appt.id}
+                  onClick={() => {
+                    const dummyPayload = `VARUDU ATELIER RESERVATION\nID: ${appt.id.replace('appt-', '')}\nGroom: ${appt.customerName}\nPhone: ${appt.customerPhone}\nLounge: ${appt.branch}\nSlot: ${appt.date} @ ${appt.time}`;
+                    handleProcessQRString(dummyPayload);
+                  }}
+                  className="bg-black/40 hover:bg-[#C5A85D]/10 hover:border-[#C5A85D]/40 border border-white/5 px-3 py-2.5 rounded text-left transition-all duration-200 cursor-pointer text-xs group flex items-center justify-between"
+                >
+                  <div className="truncate pr-2">
+                    <span className="text-[9px] font-mono text-[#C5A85D] block uppercase tracking-wider truncate mb-0.5">
+                      #{appt.id.replace('appt-', '')}
+                    </span>
+                    <span className="text-zinc-200 font-semibold truncate block group-hover:text-[#E5C46D] transition-colors font-sans">
+                      {appt.customerName}
+                    </span>
+                  </div>
+                  {appt.scanCount !== undefined && appt.scanCount > 0 ? (
+                    <span className="bg-[#C5A85D]/20 text-[#C5A85D] border border-[#C5A85D]/30 rounded-full px-2 py-0.5 text-[8px] font-mono shrink-0">
+                      Scanned {appt.scanCount}x
+                    </span>
+                  ) : (
+                    <span className="text-zinc-600 text-[8px] uppercase tracking-wider font-mono shrink-0">
+                      Unscanned
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Scanned detail file & History feed */}
+        <div className="lg:col-span-6 space-y-6">
+          
+          {/* Decoded Result Detail Sheet */}
+          <div className="bg-[#121212] border border-white/5 rounded-lg p-5 space-y-5">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <span className="text-[10px] uppercase font-mono tracking-[0.2em] text-[#C5A85D] font-extrabold flex items-center space-x-1">
+                <span className="inline-block w-1.5 h-1.5 bg-[#C5A85D] rounded-full animate-ping mr-1 animate-pulse" />
+                <span>Active Scanner Readout</span>
+              </span>
+              {scannedAppointment && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScannedAppointment(null);
+                    setQrScanStatus('idle');
+                    setLastDecodedText('');
+                  }}
+                  className="text-zinc-500 hover:text-white text-xs uppercase font-sans tracking-widest font-semibold flex items-center space-x-1 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Clear</span>
+                </button>
+              )}
+            </div>
+
+            {scannedAppointment ? (
+              <motion.div
+                key={scannedAppointment.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+              >
+                {/* Visual Header */}
+                <div className="flex items-center justify-between p-3 bg-[#C5A85D]/5 border border-[#C5A85D]/10 rounded-lg">
+                  <div>
+                    <span className="text-[9px] uppercase tracking-widest font-mono text-zinc-500 block">
+                      TICKET IDENTITY KEY
+                    </span>
+                    <span className="text-[11px] font-mono text-[#C5A85D] font-extrabold tracking-wider block">
+                      #{scannedAppointment.id.replace('appt-', '')}
+                    </span>
+                  </div>
+                  
+                  {/* LIVE DISPATCH SCANS BADGE */}
+                  <div className="bg-gradient-to-r from-amber-500/10 to-amber-500/20 border border-amber-500/30 px-3.5 py-1.5 rounded-lg text-center shadow-lg">
+                    <span className="text-[8px] uppercase tracking-widest font-sans text-amber-200 block font-extrabold leading-none mb-0.5">
+                      TOTAL SCANS
+                    </span>
+                    <span className="text-sm font-mono font-black text-amber-300 leading-none">
+                      {scannedAppointment.scanCount || 1} times
+                    </span>
+                  </div>
+                </div>
+
+                {/* Details Sheet */}
+                <div className="space-y-3.5">
+                  <div>
+                    <h4 className="text-2xl font-light text-white tracking-wide font-serif">
+                      {scannedAppointment.customerName}
+                    </h4>
+                    <p className="text-[10px] text-zinc-400 tracking-widest uppercase font-sans mt-0.5">
+                      Groom Status: <span className="text-[#C5A85D] font-semibold">{scannedAppointment.status}</span>
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
+                    <div className="bg-black/30 border border-white/5 p-2.5 rounded">
+                      <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] block font-semibold mb-1">
+                        Showroom Ingress
+                      </span>
+                      <span className="text-zinc-300 leading-tight block">
+                        {scannedAppointment.branch}
+                      </span>
+                    </div>
+
+                    <div className="bg-black/30 border border-white/5 p-2.5 rounded">
+                      <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] block font-semibold mb-1">
+                        Allocated Slot
+                      </span>
+                      <span className="text-zinc-300 leading-tight block font-mono">
+                        {scannedAppointment.date} at {scannedAppointment.time}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Contact file */}
+                  <div className="bg-black/20 rounded p-3 space-y-1.5 border border-white/5">
+                    <div className="flex justify-between text-xs font-sans">
+                      <span className="text-zinc-500">Contact Number:</span>
+                      <span className="text-zinc-300 font-mono">{scannedAppointment.customerPhone}</span>
+                    </div>
+                    {scannedAppointment.customerEmail && (
+                      <div className="flex justify-between text-xs font-sans border-t border-white/5 pt-1.5">
+                        <span className="text-zinc-500">Registered Email:</span>
+                        <span className="text-zinc-300 underline font-sans truncate pr-1 text-xs">{scannedAppointment.customerEmail}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs font-sans border-t border-white/5 pt-1.5">
+                      <span className="text-zinc-500">Booking Raised:</span>
+                      <span className="text-[#C5A85D] font-mono text-[11px] font-bold">
+                        {scannedAppointment.timestamp ? (
+                          new Date(scannedAppointment.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date(scannedAppointment.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                        ) : (
+                          'Initial Seeding'
+                        )}
+                      </span>
+                    </div>
+                    {scannedAppointment.lastScannedAt && (
+                      <div className="flex justify-between text-xs font-sans border-t border-white/5 pt-1.5">
+                        <span className="text-zinc-500">Last Scanned:</span>
+                        <span className="text-[#C5A85D] font-mono">
+                          {new Date(Number(scannedAppointment.lastScannedAt)).toLocaleTimeString()} Today
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Consultation / Swatch Occasion */}
+                  <div className="space-y-1">
+                    <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-mono block">
+                      Wear trial fit & notes
+                    </span>
+                    <p className="text-zinc-300 text-xs font-serif leading-relaxed italic bg-black/45 p-3 rounded border border-white/5">
+                      "{scannedAppointment.occasion || 'General Wedding Couture Selection'}"
+                    </p>
+                  </div>
+
+                  {/* Action row to update status */}
+                  <div className="bg-zinc-900/60 p-3 rounded border border-white/5 flex flex-col md:flex-row justify-between items-center gap-2">
+                    <p className="text-[10px] text-gray-400 font-serif text-center md:text-left leading-relaxed">
+                      Update the VIP status inside CRM database:
+                    </p>
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleApptStatusChange(scannedAppointment.id, 'Confirmed')}
+                        className={`flex-1 md:flex-none px-3 py-1.5 text-[9px] font-sans font-bold uppercase rounded tracking-widest cursor-pointer border ${
+                          scannedAppointment.status === 'Confirmed' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-black text-emerald-400 border-emerald-950/40 hover:bg-emerald-950/20'
+                        }`}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApptStatusChange(scannedAppointment.id, 'Completed')}
+                        className={`flex-1 md:flex-none px-3 py-1.5 text-[9px] font-sans font-bold uppercase rounded tracking-widest cursor-pointer border ${
+                          scannedAppointment.status === 'Completed' ? 'bg-blue-600 text-white border-blue-500' : 'bg-black text-blue-400 border-blue-950/40 hover:bg-blue-950/20'
+                        }`}
+                      >
+                        Complete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="text-center py-16 space-y-3 flex flex-col items-center justify-center">
+                <div className="w-12 h-12 rounded-full border border-[#C5A85D]/20 flex items-center justify-center text-[#C5A85D]/40 animate-pulse">
+                  <Camera className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-zinc-400 text-xs font-serif uppercase tracking-widest">
+                    Awaiting Access Scanner Ingress
+                  </p>
+                  <p className="text-[10.5px] text-zinc-500 mt-1 max-w-[280px] mx-auto leading-relaxed font-sans">
+                    Scan a barcode or click on standard mock profiles on the left panels to query detailed groom styling specifications.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Scanned History Feed */}
+          <div className="bg-[#121212] border border-white/5 rounded-lg p-5 space-y-4">
+            <div className="flex items-center space-x-2 border-b border-white/5 pb-3">
+              <Clock className="w-4 h-4 text-[#C5A85D]" />
+              <h3 className="text-sm font-sans font-semibold text-white uppercase tracking-wider">
+                Recent Check-In Activity Log
+              </h3>
+            </div>
+
+            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+              {scannedHistory.length > 0 ? (
+                scannedHistory.map((item, index) => (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      setScannedAppointment(item);
+                      setQrScanStatus('success');
+                    }}
+                    className="flex justify-between items-center p-3 bg-black/40 hover:bg-[#C5A85D]/5 border border-white/5 hover:border-[#C5A85D]/10 rounded cursor-pointer transition-all duration-200"
+                  >
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-zinc-100 font-sans text-xs font-semibold">
+                          {item.customerName}
+                        </span>
+                        <span className="text-[8px] font-mono text-[#C5A85D] bg-[#1a1a1a] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+                          #{item.id.replace('appt-', '')}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-zinc-500 block font-mono mt-0.5">
+                        Lounge: {item.branch} • {item.date} {item.time}
+                      </span>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className="bg-[#C5A85D]/10 border border-[#C5A85D]/30 rounded px-2 py-0.5 text-right font-mono inline-block">
+                        <span className="text-[9px] text-[#C5A85D] font-bold">
+                          Scans: {item.scanCount}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-zinc-500 block font-mono mt-1">
+                        {item.lastScannedAt ? new Date(Number(item.lastScannedAt)).toLocaleTimeString() : 'Recently'}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-zinc-500 text-[11px] font-serif uppercase tracking-widest border border-dashed border-white/5 rounded">
+                  No VIP check-ins logged for this session.
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 bg-black z-50 overflow-hidden flex flex-col" id="admin-crm-workspace">
       
@@ -2070,11 +2762,17 @@ export default function AdminCRM({ onClose }: CRMProps) {
             <Sparkles className="w-5 h-5 text-[#C5A85D]" />
           </div>
           <div>
-            <h1 className="font-display font-medium text-[#E5C46D] text-lg tracking-widest uppercase flex items-center space-x-1.5">
+            <h1 className="font-display font-medium text-[#E5C46D] text-lg tracking-widest uppercase flex items-center space-x-1.5 animate-fade-in">
               <span>Varudu CRM</span>
-              <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 text-[8px] tracking-normal font-sans rounded animate-pulse">
-                ● Connected Live
-              </span>
+              <button
+                onClick={handleManualForceSync}
+                disabled={isManualSyncing}
+                title="Force refresh database records from Firestore server"
+                className="px-2 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/25 text-emerald-400 text-[8px] tracking-normal font-sans rounded cursor-pointer flex items-center space-x-1 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-2 h-2 mr-0.5 text-emerald-400 ${isManualSyncing ? 'animate-spin' : ''}`} />
+                {isManualSyncing ? 'Syncing...' : '● Connected Live'}
+              </button>
             </h1>
             <p className="text-[10px] text-gray-400 uppercase tracking-widest font-sans">
               Indian Wedding Fashion Atelier Operations
@@ -2085,18 +2783,23 @@ export default function AdminCRM({ onClose }: CRMProps) {
         {/* Dashboard Tabs Selector & Actions - fully responsive wrap container */}
         <div className="flex flex-wrap items-center justify-center xl:justify-end gap-2 sm:gap-3 w-full xl:w-auto">
           <button
-            onClick={() => setCrmTab('leads')}
+            onClick={() => setCrmTab('media')}
             className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
-              crmTab === 'leads'
+              crmTab === 'media'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
                 : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
-            Leads Directory ({leads.length})
+            🎬 Studio
           </button>
-          
+
           <button
-            onClick={() => setCrmTab('appointments')}
+            onClick={() => {
+              setCrmTab('appointments');
+              setApptStatusFilter('All');
+              setBranchFilter('All');
+              setSearchQuery('');
+            }}
             className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
               crmTab === 'appointments'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
@@ -2107,14 +2810,14 @@ export default function AdminCRM({ onClose }: CRMProps) {
           </button>
 
           <button
-            onClick={() => setCrmTab('analytics')}
+            onClick={() => setCrmTab('reels')}
             className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
-              crmTab === 'analytics'
+              crmTab === 'reels'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
                 : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
-            Revenue Analytics
+            📹 Groom Videos ({groomVideosList.length})
           </button>
 
           <button
@@ -2129,25 +2832,45 @@ export default function AdminCRM({ onClose }: CRMProps) {
           </button>
 
           <button
-            onClick={() => setCrmTab('media')}
+            onClick={() => {
+              setCrmTab('leads');
+              setStatusFilter('All');
+              setBudgetFilter('All');
+              setSearchQuery('');
+            }}
             className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
-              crmTab === 'media'
+              crmTab === 'leads'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
                 : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
-            🎬 Studio
+            Leads Directory ({leads.length})
           </button>
 
           <button
-            onClick={() => setCrmTab('reels')}
+            onClick={() => {
+              setCrmTab('qr-scanner');
+              setIsQrCameraActive(true); // Auto-start camera when choosing scanner tab!
+              setSearchQuery('');
+            }}
             className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
-              crmTab === 'reels'
+              crmTab === 'qr-scanner'
                 ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
                 : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
             }`}
           >
-            📹 Groom Videos ({groomVideosList.length})
+            📷 Admin QR Scanner
+          </button>
+
+          <button
+            onClick={() => setCrmTab('analytics')}
+            className={`px-3 sm:px-4 py-2 text-[10px] uppercase font-sans font-semibold tracking-widest rounded border transition-all cursor-pointer ${
+              crmTab === 'analytics'
+                ? 'bg-[#C5A85D] text-black border-[#C5A85D]'
+                : 'bg-black text-gray-400 border-white/5 hover:text-white hover:border-white/10'
+            }`}
+          >
+            Revenue Analytics
           </button>
 
           <div className="h-4 w-[1px] bg-white/10 hidden sm:block mx-0.5" />
@@ -3608,9 +4331,13 @@ export default function AdminCRM({ onClose }: CRMProps) {
                             >
                               <option value="Sherwani">Sherwani</option>
                               <option value="Indo-Western">Indo-Western (Blazers & Suits)</option>
+                              <option value="Royal-Jodhpuri">Royal Jodhpuri & Bandhgala</option>
                               <option value="Kurta-Pajama">Kurta-Pajama</option>
+                              <option value="Angrakha-Anarkali">Nawabi Angrakha & Anarkali</option>
                               <option value="Reception-Wear">Reception-Wear / Tuxedos</option>
+                              <option value="Haldi-Mehendi">Haldi & Sangeet Specialty</option>
                               <option value="Groom-Accessories">Groom Accessories</option>
+                              <option value="Royal-Safas">Royal Safas & Turbans</option>
                             </select>
                           </div>
                         </div>
@@ -4330,8 +5057,13 @@ export default function AdminCRM({ onClose }: CRMProps) {
                       >
                         <option value="Sherwani">Sherwani</option>
                         <option value="Indo-Western">Indo-Western</option>
+                        <option value="Royal-Jodhpuri">Royal-Jodhpuri</option>
                         <option value="Kurta-Pajama">Kurta-Pajama</option>
+                        <option value="Angrakha-Anarkali">Angrakha-Anarkali</option>
                         <option value="Reception-Wear">Reception-Wear</option>
+                        <option value="Haldi-Mehendi">Haldi-Mehendi</option>
+                        <option value="Groom-Accessories">Groom-Accessories</option>
+                        <option value="Royal-Safas">Royal-Safas</option>
                       </select>
                     </div>
 
@@ -4939,6 +5671,26 @@ export default function AdminCRM({ onClose }: CRMProps) {
 
             {/* Leads List Grid */}
             <div className="space-y-4" id="leads-realtime-deck">
+              {(searchQuery !== '' || statusFilter !== 'All' || budgetFilter !== 'All') && (
+                <div className="bg-[#C5A85D]/10 border border-[#C5A85D]/30 px-4 py-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200 font-sans">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#C5A85D] animate-pulse shrink-0" />
+                    <span>
+                      Showing <strong>{filteredLeads.length}</strong> of <strong>{leads.length}</strong> customer leads matching active filters: {searchQuery && `"${searchQuery}"`} {statusFilter !== 'All' && `[Status: ${statusFilter}]`} {budgetFilter !== 'All' && `[Budget: ${budgetFilter}]`}.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setStatusFilter('All');
+                      setBudgetFilter('All');
+                      setSearchQuery('');
+                    }}
+                    className="px-3 py-1 bg-[#C5A85D]/20 hover:bg-[#C5A85D] hover:text-black rounded text-[9px] uppercase tracking-widest font-extrabold transition-all cursor-pointer select-none"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              )}
               {filteredLeads.length > 0 ? (
                 filteredLeads.map((lead) => (
                   <div
@@ -5008,6 +5760,72 @@ export default function AdminCRM({ onClose }: CRMProps) {
                         <p className="text-[#C5A85D] font-sans leading-none flex items-center uppercase font-bold text-[10px] tracking-widest">
                           <strong>Est Budget:</strong> {lead.budget.toUpperCase()}
                         </p>
+                      </div>
+
+                      {/* Detailed Styling Preferences Block */}
+                      <div className="bg-black/20 border border-white/5 p-4 rounded-md space-y-3 mt-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {/* Styling Preferences */}
+                          <div>
+                            <span className="text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] block mb-1.5 font-bold">
+                              🎨 Preferred Palette
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {lead.preferredColors && lead.preferredColors.length > 0 ? (
+                                lead.preferredColors.map((color, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="px-2 py-0.5 text-[10px] font-sans font-medium text-white/90 bg-white/5 border border-white/10 rounded-full"
+                                  >
+                                    {color}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] font-serif text-gray-500 italic">No color specified</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] block mb-1.5 font-bold">
+                              👔 Preferred Menswear Silhouette
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {lead.preferredStyles && lead.preferredStyles.length > 0 ? (
+                                lead.preferredStyles.map((style, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="px-2 py-0.5 text-[10px] font-sans font-medium text-white/90 bg-[#C5A85D]/10 border border-[#C5A85D]/20 rounded-full"
+                                  >
+                                    {style}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] font-serif text-gray-500 italic">No silhouette specified</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Customer Styling Concerns */}
+                        {lead.notes && (
+                          <div className="pt-2 border-t border-white/5">
+                            <span className="text-[10px] uppercase font-sans tracking-widest text-[#C5A85D] block mb-1 font-bold">
+                              📝 Client Consultation Brief (Bespoke Notes)
+                            </span>
+                            <p className="text-xs text-gray-300 font-sans italic leading-relaxed">
+                              "{lead.notes}"
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Geographic Detect proximity location */}
+                        {lead.location && (
+                          <div className="pt-2 border-t border-white/5 flex items-center text-[10px] text-gray-400 font-sans">
+                            <span className="text-[#C5A85D] font-medium mr-1.5">🛰️ Auto-Detected Proximity:</span>
+                            {lead.location}
+                          </div>
+                        )}
                       </div>
 
                       {/* Custom uploaded images list trigger */}
@@ -5117,6 +5935,11 @@ export default function AdminCRM({ onClose }: CRMProps) {
             </div>
 
           </div>
+        ) : crmTab === 'qr-scanner' ? (
+          /* Dedicated QR Scanner Panel View */
+          <div className="max-w-6xl mx-auto space-y-6">
+            {renderAdminQrScannerPane()}
+          </div>
         ) : (
           /* Showroom Calendar VIP Bookings List */
           <div className="max-w-4xl mx-auto space-y-6" id="crm-appointments-pane">
@@ -5168,6 +5991,16 @@ export default function AdminCRM({ onClose }: CRMProps) {
                   <option value="Confirmed">Confirmed</option>
                   <option value="Completed">Completed</option>
                 </select>
+
+                <button
+                  type="button"
+                  onClick={handleExportAppointmentsToCsv}
+                  className="bg-zinc-900 border border-[#C5A85D]/20 hover:border-[#C5A85D] text-[#C5A85D] hover:bg-black px-3 py-2 text-[10px] uppercase font-sans font-bold tracking-widest rounded flex items-center space-x-1.5 transition-all cursor-pointer shadow-md select-none active:scale-95 shrink-0"
+                  title="Export appointments to CSV based on current filters"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Export CSV</span>
+                </button>
               </div>
             </div>
 
@@ -5363,6 +6196,15 @@ export default function AdminCRM({ onClose }: CRMProps) {
                           </div>
                           <div className="text-[10px] text-gray-400 font-sans mt-1">
                             🕒 Allocated Slot: <strong className="text-[#E5C46D]">{scannedAppointment.date} at {scannedAppointment.time}</strong>
+                          </div>
+                          <div className="text-[10px] text-gray-400 font-sans mt-1">
+                            📅 Request Raised: <strong className="text-zinc-300">
+                              {scannedAppointment.timestamp ? (
+                                new Date(scannedAppointment.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date(scannedAppointment.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                              ) : (
+                                'Initial Seeding'
+                              )}
+                            </strong>
                           </div>
                         </div>
 
@@ -5579,7 +6421,7 @@ export default function AdminCRM({ onClose }: CRMProps) {
                                       ? 'bg-zinc-800/60 text-zinc-400 border border-zinc-700/30'
                                       : 'bg-amber-950/40 text-amber-300 border border-amber-800/40'
                                   }`}
-                                  title={`Click to rotate status. Groom: ${a.customerName} - ${a.time} - Venue: ${a.branch}`}
+                                  title={`Click to rotate status. Groom: ${a.customerName} - ${a.time} - Venue: ${a.branch} - Request Raised: ${a.timestamp ? new Date(a.timestamp).toLocaleString() : 'Initial Seeding'}`}
                                 >
                                   {a.customerName.split(' ')[0]} {a.time}
                                 </div>
@@ -5608,6 +6450,26 @@ export default function AdminCRM({ onClose }: CRMProps) {
             ) : (
               /* Showroom Bookings List Index */
               <div className="space-y-4">
+                {(searchQuery !== '' || branchFilter !== 'All' || apptStatusFilter !== 'All') && (
+                  <div className="bg-[#C5A85D]/10 border border-[#C5A85D]/30 px-4 py-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200 font-sans">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#C5A85D] animate-pulse shrink-0" />
+                      <span>
+                        Showing <strong>{filteredAppointments.length}</strong> of <strong>{appointments.length}</strong> VIP appointments matching active filters: {searchQuery && `"${searchQuery}"`} {branchFilter !== 'All' && `[Lounge: ${branchFilter}]`} {apptStatusFilter !== 'All' && `[Status: ${apptStatusFilter}]`}.
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setApptStatusFilter('All');
+                        setBranchFilter('All');
+                        setSearchQuery('');
+                      }}
+                      className="px-[#B58D3D] px-3 py-1 bg-[#C5A85D]/20 hover:bg-[#C5A85D] hover:text-black rounded text-[9px] uppercase tracking-widest font-extrabold transition-all cursor-pointer select-none"
+                    >
+                      Clear Filters
+                    </button>
+                  </div>
+                )}
                 {filteredAppointments.length > 0 ? (
                   filteredAppointments.map((appt) => (
                     <div
@@ -5634,9 +6496,37 @@ export default function AdminCRM({ onClose }: CRMProps) {
                           📍 Showroom Venue: <span className="text-[#E5C46D]">{appt.branch}</span>
                         </p>
 
-                        <div className="grid grid-cols-2 gap-4 mt-3 text-xs font-sans text-gray-300">
-                          <p>🕒 Time booked: <strong>{appt.date} at {appt.time}</strong></p>
-                          <p>💬 Groom Phone: <strong>{appt.customerPhone}</strong></p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-2.5 gap-x-4 mt-3 text-xs font-sans text-gray-300">
+                          <p className="flex items-center">
+                            <span className="text-gray-500 mr-1.5 font-bold uppercase tracking-wider text-[9px]">🕒 Schedule:</span> 
+                            <strong>{appt.date} at {appt.time}</strong>
+                          </p>
+                          <p className="flex items-center">
+                            <span className="text-gray-500 mr-1.5 font-bold uppercase tracking-wider text-[9px]">📅 Request Raised:</span> 
+                            <strong className="text-[#C5A85D] hover:underline">
+                              {appt.timestamp ? (
+                                new Date(appt.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date(appt.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                              ) : (
+                                'Initial Seeding'
+                              )}
+                            </strong>
+                          </p>
+                          <p className="flex items-center">
+                            <span className="text-gray-500 mr-1.5 font-bold uppercase tracking-wider text-[9px]">💬 Phone:</span> 
+                            <strong>{appt.customerPhone}</strong>
+                          </p>
+                          {appt.customerEmail && (
+                            <p className="flex items-center underline">
+                              <span className="text-gray-500 mr-1.5 font-bold uppercase tracking-wider text-[9px]">📧 Email:</span> 
+                              <strong>{appt.customerEmail}</strong>
+                            </p>
+                          )}
+                          {appt.occasion && (
+                            <p className="flex items-center sm:col-span-2 lg:col-span-3 pt-1">
+                              <span className="text-gray-500 mr-1.5 font-bold uppercase tracking-wider text-[9px]">🏛️ Consultation Type / Occasion:</span> 
+                              <strong className="text-[#E5C46D]">{appt.occasion}</strong>
+                            </p>
+                          )}
                         </div>
 
                         {appt.specialRequests && (
@@ -5645,6 +6535,20 @@ export default function AdminCRM({ onClose }: CRMProps) {
                             <p className="italic text-gray-400">"{appt.specialRequests}"</p>
                           </div>
                         )}
+
+                        {/* Inline Brief Notes editable box for store managers/admins */}
+                        <div className="mt-3.5 bg-black/40 p-3 rounded border border-white/5 space-y-1.5">
+                          <span className="text-[9px] uppercase tracking-widest text-[#C5A85D] font-sans block font-bold">
+                            Appointment Showroom Brief (Bespoke Fitting Notes)
+                          </span>
+                          <input
+                            type="text"
+                            defaultValue={appt.adminNotes || ''}
+                            onBlur={(e) => handleSaveApptNote(appt.id, e.target.value)}
+                            placeholder="Stylist appointment notes... (e.g., Trial completed, measurements logged, swatches finalized)"
+                            className="w-full bg-transparent border-0 border-b border-white/10 focus:border-[#C5A85D] py-1 text-xs text-gray-300 font-serif focus:outline-none"
+                          />
+                        </div>
                       </div>
 
                       {/* Appt Modifier */}

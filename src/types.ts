@@ -42,7 +42,7 @@ export interface Appointment {
 export interface ProductCollection {
   id: string;
   name: string;
-  category: 'Sherwani' | 'Indo-Western' | 'Kurta-Pajama' | 'Reception-Wear' | 'Groom-Accessories' | 'Sherwanis' | 'Indo-Westerns' | 'Tuxedos' | 'Kurta Sets' | 'Reception Wear' | 'Accessories';
+  category: 'Sherwani' | 'Indo-Western' | 'Kurta-Pajama' | 'Reception-Wear' | 'Groom-Accessories' | 'Royal-Jodhpuri' | 'Angrakha-Anarkali' | 'Haldi-Mehendi' | 'Royal-Safas' | 'Sherwanis' | 'Indo-Westerns' | 'Tuxedos' | 'Kurta Sets' | 'Reception Wear' | 'Accessories' | 'Royal Jodhpuris' | 'Angrakhas & Anarkalis' | 'Haldi & Sangeet Specialty' | 'Royal Safas' | string;
   description: string;
   priceRange: string;
   imageUrl: string;

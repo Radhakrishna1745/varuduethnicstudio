@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, getDoc } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore, doc, getDoc } from 'firebase/firestore';
 // @ts-ignore
 import firebaseConfigRaw from '../firebase-applet-config.json?raw';
 
@@ -31,20 +31,21 @@ try {
 }
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
-export const auth = getAuth();
 
-// Test connection strictly to check if Firestore is operational
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. Server is offline.");
-    }
-  }
+let firestoreInstance: any;
+try {
+  firestoreInstance = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, firebaseConfig.firestoreDatabaseId);
+} catch (e) {
+  console.warn("IndexedDB offline cache is not supported or blocked in this iframe. Falling back to default in-memory cache.", e);
+  firestoreInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 }
-testConnection();
+
+export const db = firestoreInstance; /* CRITICAL: The app will break without this line */
+export const auth = getAuth();
 
 // --- CLOUDINARY ENVIRONMENT CONFIGURATION RESOLVER ---
 export async function getCloudinaryConfig(): Promise<{ cloudName: string; uploadPreset: string }> {

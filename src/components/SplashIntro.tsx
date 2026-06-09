@@ -20,16 +20,28 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
   const [animTriggered, setAnimTriggered] = useState(false);
   const [showSparks, setShowSparks] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const introSequenceStartedRef = useRef(false);
+
+  // Reliable playback trigger whenever videoBlobUrl changes
+  useEffect(() => {
+    if (hasVideo && videoBlobUrl && videoRef.current) {
+      const videoEl = videoRef.current;
+      videoEl.load();
+      const playPromise = videoEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.warn("Autoplay was blocked or failed, waiting for user click or unmute:", err);
+        });
+      }
+    }
+  }, [videoBlobUrl, hasVideo]);
 
   useEffect(() => {
     let active = true;
     let fallbackTimeout: any = null;
-    let didInitialize = false;
 
     // Attempt to load the custom video logo from Firebase Storage
     async function loadCustomVideo() {
-      if (didInitialize) return;
-      didInitialize = true;
       if (fallbackTimeout) clearTimeout(fallbackTimeout);
 
       try {
@@ -51,28 +63,33 @@ export default function SplashIntro({ onComplete, onNavigateToCRM }: SplashIntro
       } finally {
         if (active) {
           setLoading(false);
-          // Trigger animations
-          setTimeout(() => {
-            if (active) {
-              setAnimTriggered(true);
-              // Play the elegant chime sound
-              playRegalGoldChime();
-            }
-          }, 300);
           
-          setTimeout(() => {
-            if (active) setShowSparks(true);
-          }, 1200);
-
-          // Dynamic auto-dismiss timeout from Stylist curation desk
-          const rawDuration = getCachedSetting('brand', 'intro_duration', '7');
-          if (rawDuration !== 'full') {
-            const numSecs = parseInt(rawDuration, 10) || 7;
+          // Trigger entry entryway animation and chimes exactly once
+          if (!introSequenceStartedRef.current) {
+            introSequenceStartedRef.current = true;
+            
             setTimeout(() => {
               if (active) {
-                handleFinished();
+                setAnimTriggered(true);
+                // Play the elegant chime sound
+                playRegalGoldChime();
               }
-            }, numSecs * 1000);
+            }, 300);
+            
+            setTimeout(() => {
+              if (active) setShowSparks(true);
+            }, 1200);
+
+            // Dynamic auto-dismiss timeout from Stylist curation desk
+            const rawDuration = getCachedSetting('brand', 'intro_duration', '7');
+            if (rawDuration !== 'full') {
+              const numSecs = parseInt(rawDuration, 10) || 7;
+              setTimeout(() => {
+                if (active) {
+                  handleFinished();
+                }
+              }, numSecs * 1000);
+            }
           }
         }
       }

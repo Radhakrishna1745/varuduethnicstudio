@@ -35,7 +35,7 @@ export default function GroomVideos() {
     return () => unsubscribe();
   }, []);
 
-  const categories = ['All', 'Sherwani', 'Indo-Western', 'Kurta-Pajama'];
+  const categories = ['All', 'Sherwani', 'Indo-Western', 'Royal-Jodhpuri', 'Kurta-Pajama', 'Angrakha-Anarkali', 'Reception-Wear', 'Haldi-Mehendi', 'Groom-Accessories', 'Royal-Safas'];
 
   const filteredVideos = activeCategory === 'All'
     ? videosList

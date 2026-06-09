@@ -71,6 +71,50 @@ export const COLLECTIONS: ProductCollection[] = [
     highlights: ['Genuine Leather Bedded Shoes', 'Handcrafted Golden Kalangi with Ruby Embellishment', 'Zari Embroidered Brocade Mojri', 'Traditional Royal Tassel Work'],
     tags: ['Groom Styling', 'Mojris & Safa', 'Gold Accents', 'Groom Accessories'],
     features: ['Cushioned orthotic insole for long standing weddings', 'Safa custom sized to head dimensions']
+  },
+  {
+    id: 'coll-royal-jodhpuri',
+    name: 'Grand Imperial Jodhpuri Bandhgala',
+    category: 'Royal-Jodhpuri',
+    description: 'A masterpiece of structure and drape. Tailored with a premium high-twist Italian wool-silk blend and fastened with hand-carved sterling silver buttons with Rajput heritage seals.',
+    priceRange: '₹85,000 - ₹1,95,000',
+    imageUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&q=80&w=800',
+    highlights: ['Italian Wool-Silk Blend', 'Sterling Silver Seal Buttons', 'Bespoke Piped Silken Collar', 'High-posture horsehair inner canvas'],
+    tags: ['Jodhpuri', 'Bandhgala', 'Royal Wedding', 'Silver Accents'],
+    features: ['Custom size-trial draft', 'Available in Deep Navy, Hunter Green, & Imperial Charcoal']
+  },
+  {
+    id: 'coll-nawabi-angrakha',
+    name: 'Shahi Nawabi Angrakha Flared Set',
+    category: 'Angrakha-Anarkali',
+    description: 'A traditional overlap Angrakha silhouette with generous flared panels. Embellished with delicate resham thread-work, geometric borders, and traditional fabric-tassel side ties.',
+    priceRange: '₹1,10,000 - ₹2,40,000',
+    imageUrl: 'https://images.unsplash.com/photo-1597484211625-24d193eb0418?auto=format&fit=crop&q=80&w=800',
+    highlights: ['Double-layered asymmetrical overlap', 'Intricately embroidered Resham patterns', 'Handmade silk-cord side tassels', 'Georgette and Chanderi Silk base'],
+    tags: ['Angrakha', 'Anarkali', 'Nawabi Heritage', 'Mehendi Special'],
+    features: ['Customized flare radius', 'Includes silk pajama & matching embroidered stole']
+  },
+  {
+    id: 'coll-haldi-specialty',
+    name: 'Sunshine Mustard Silk Haldi Kurta',
+    category: 'Haldi-Mehendi',
+    description: 'A light-weight pure mulberry silk kurta set in vivacious sunshine mustard. Features a delicate self-woven jacquard check pattern and a modern asymmetric zip closure hidden under a clean placket.',
+    priceRange: '₹28,000 - ₹55,000',
+    imageUrl: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&q=80&w=800',
+    highlights: ['Pure mulberry hand-spun silk', 'Subtle self-woven gold zardozi collar embroidery', 'Modern comfort relaxed trousers', 'Anti-stain textile coating option'],
+    tags: ['Haldi Wear', 'Sangeet Style', 'Mustard Gold', 'Pure Silk'],
+    features: ['Highly breathable open weave lining', 'Available in Mustard Seed, Mint Sage, & Marigold Orange']
+  },
+  {
+    id: 'coll-royal-safa-kit',
+    name: 'Maharaja Hand-Crushed Banarasi Safa & Brooch',
+    category: 'Royal-Safas',
+    description: 'Pre-pleated traditional wedding safa in exquisite hand-dyed leheriya pattern, crafted from pure Banarasi tissue silk. Accompanied by a 22k gold-plated kalangi encrusted with natural tourmalines and real pearls.',
+    priceRange: '₹18,000 - ₹45,000',
+    imageUrl: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&q=80&w=800',
+    highlights: ['Pre-pleated Banarasi Tissue Silk', '22-Karat Gold-plated heavy Turban Pin', 'Hand-dyed authentic Leheriya pattern', 'Adjustable cushioned inside circumference band'],
+    tags: ['Safa', 'Turban', 'Kalangi Brooch', 'Royal Accessories'],
+    features: ['Made to order based on head measurements', 'Includes premium protective hardwood casket storage box']
   }
 ];
 

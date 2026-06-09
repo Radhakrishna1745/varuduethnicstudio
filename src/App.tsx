@@ -36,7 +36,8 @@ import {
 import { 
   Sparkles, Calendar, MessageSquare, Phone, MapPin, 
   Clock, ShieldCheck, Star, ArrowRight, BookOpen, 
-  Heart, Check, Info, Award, Settings, UserCheck, X, Printer, Navigation, QrCode, Volume2, RefreshCw, ExternalLink
+  Heart, Check, Info, Award, Settings, UserCheck, X, Printer, Navigation, QrCode, Volume2, RefreshCw, ExternalLink,
+  HelpCircle, Smartphone
 } from 'lucide-react';
 
 // Framer Motion Animation Variants for Staggered Appt Inputs
@@ -130,6 +131,10 @@ export default function App() {
   const [apptEmail, setApptEmail] = useState('');
   const [apptSpecialRequests, setApptSpecialRequests] = useState('');
   const [apptSuccessTicket, setApptSuccessTicket] = useState<any | null>(null);
+  const [showCheckInGuide, setShowCheckInGuide] = useState(false);
+  const [mockScanCount, setMockScanCount] = useState(0);
+  const [scanSuccessMessage, setScanSuccessMessage] = useState('');
+  const [showEliteReminder, setShowEliteReminder] = useState(false);
 
   // Geolocation Pre-Selection States
   const [geoLoading, setGeoLoading] = useState(false);
@@ -244,6 +249,21 @@ export default function App() {
     window.addEventListener('varudu-photo-updated', loadLegacyPhoto);
     window.addEventListener('varudu-settings-updated', loadLegacyPhoto);
 
+    const reminderTimeout = setTimeout(() => {
+      setShowEliteReminder(true);
+    }, 2500);
+
+    const handleScroll = () => {
+      const el = document.getElementById('featured-collections-desk');
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= window.innerHeight - 100) {
+          setShowEliteReminder(false);
+        }
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+
     // Randomize slot decreases slowly to trigger real customer scarcity/FOMO
     const interval = setInterval(() => {
       setVipSlotsLeft(prev => {
@@ -254,7 +274,9 @@ export default function App() {
 
     return () => {
       clearInterval(interval);
+      clearTimeout(reminderTimeout);
       stopLiveSync();
+      window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('varudu-photo-updated', loadLegacyPhoto);
       window.removeEventListener('varudu-settings-updated', loadLegacyPhoto);
     };
@@ -415,6 +437,11 @@ export default function App() {
             <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03] print-border">
               <strong class="text-zinc-500 font-sans uppercase text-[9px] tracking-wider print-text-muted">Fitting Clock:</strong>
               <span class="text-white font-bold ml-2 print-text">${apptSuccessTicket.date} at ${apptSuccessTicket.time}</span>
+            </div>
+
+            <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03] print-border">
+              <strong class="text-zinc-500 font-sans uppercase text-[9px] tracking-wider print-text-muted">Request Raised:</strong>
+              <span class="text-zinc-300 ml-2 print-text">${apptSuccessTicket.timestamp ? new Date(apptSuccessTicket.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date(apptSuccessTicket.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Just now'}</span>
             </div>
 
             <div class="flex justify-between items-center py-0.5 print-border">
@@ -891,6 +918,7 @@ export default function App() {
                     <p>🤴 *Groom Client:* <span className="text-white font-bold">{apptSuccessTicket.customerName}</span></p>
                     <p>⚓ *Selected lounge:* <span className="text-[#E5C46D]">{apptSuccessTicket.branch}</span></p>
                     <p>⏰ *Fitting clock:* <span className="text-white">{apptSuccessTicket.date} at {apptSuccessTicket.time}</span></p>
+                    <p>📅 *Request Raised:* <span className="text-zinc-300">{apptSuccessTicket.timestamp ? new Date(apptSuccessTicket.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date(apptSuccessTicket.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Just now'}</span></p>
                     <p>👔 *Gifting purpose:* <span className="text-white">{apptSuccessTicket.occasion}</span></p>
                     {apptSuccessTicket.specialRequests && (
                       <p className="border-t border-white/10 pt-2.5 mt-2.5 text-gray-400">
@@ -961,6 +989,16 @@ export default function App() {
                         <span>Open Pass Window</span>
                       </button>
 
+                      {/* How to Check-In Guide */}
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInGuide(true)}
+                        className="px-4 py-2.5 bg-[#4A0E17]/25 hover:bg-[#4A0E17]/50 hover:scale-[1.02] active:scale-[0.98] text-[9px] tracking-widest font-sans font-bold uppercase text-[#E5C46D] border border-[#C5A85D]/30 hover:border-[#C5A85D] rounded transition-all cursor-pointer flex items-center space-x-1.5 shadow-md"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5 text-[#C5A85D]" />
+                        <span>How to Check-In?</span>
+                      </button>
+
                       {/* Manual Re-trigger Check-In Scan simulation hook */}
                       <button
                         type="button"
@@ -988,6 +1026,13 @@ export default function App() {
                       </p>
                       <p className="text-[9px] text-gray-400 font-sans max-w-sm mx-auto leading-normal">
                         Showroom entry code: Present this screen or the printed ticket upon arrival. The front-desk receptionist will scan this code to retrieve your body specifications and styling records instantly.
+                        <button
+                          type="button"
+                          onClick={() => setShowCheckInGuide(true)}
+                          className="text-[#C5A85D] hover:text-[#E5C46D] hover:underline font-bold ml-1 inline-flex items-center tracking-wider uppercase text-[8.5px] cursor-pointer"
+                        >
+                          [ Read Guide ]
+                        </button>
                       </p>
                     </div>
                   </div>
@@ -1077,6 +1122,16 @@ export default function App() {
                     <h3 className="font-display font-medium text-2xl sm:text-3xl text-white tracking-widest">
                       Reserve Showroom Appointment
                     </h3>
+                    <div className="flex justify-center mt-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowCheckInGuide(true)}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1 bg-[#C5A85D]/10 hover:bg-[#C5A85D]/20 border border-[#C5A85D]/30 hover:border-[#C5A85D]/60 rounded text-[9px] uppercase tracking-widest font-sans font-bold text-[#E5C46D] transition-all cursor-pointer"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5 text-[#C5A85D]" />
+                        <span>How Entrance Check-In Works</span>
+                      </button>
+                    </div>
                   </div>
 
                   <motion.form 
@@ -1872,6 +1927,215 @@ export default function App() {
         </div>
       </div>
 
+      {/* HOW TO CHECK-IN SHOWROOM ENTRANCE MODAL OVERLAY */}
+      {showCheckInGuide && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 z-55">
+          <div className="relative w-full max-w-2xl bg-[#121212] border-2 border-[#C5A85D] max-h-[90vh] overflow-y-auto rounded-lg shadow-2xl">
+            <button
+              onClick={() => {
+                setShowCheckInGuide(false);
+                setScanSuccessMessage('');
+              }}
+              className="absolute top-4 right-4 p-2 bg-black border border-white/5 rounded-full text-gray-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="p-6 sm:p-8 space-y-6">
+              <div className="text-center sm:text-left">
+                <span className="text-[10px] uppercase tracking-[0.25em] text-[#C5A85D] font-sans font-extrabold block">
+                  Entrance Docket & Scanner Guide
+                </span>
+                <h4 className="font-display font-medium text-2xl sm:text-3xl text-white tracking-widest mt-1 uppercase">
+                  How Entrance Check-In Works
+                </h4>
+                <p className="text-zinc-400 text-xs mt-2 font-sans font-medium">
+                  Follow these instructions when arriving at your pre-selected Varudu Atelier Lounge to instantly sync your fits.
+                </p>
+              </div>
+
+              {/* Step Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Step 1 */}
+                <div className="p-4 bg-zinc-950 border border-white/5 rounded-lg space-y-2">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-full bg-[#4A0E17]/60 border border-[#C5A85D]/30 flex items-center justify-center text-xs font-sans font-extrabold text-[#E5C46D]">
+                      1
+                    </div>
+                    <div className="flex items-center space-x-1.5 text-white font-sans text-xs font-bold tracking-wider uppercase">
+                      <Smartphone className="w-4 h-4 text-[#C5A85D]" />
+                      <span>Prepare Your Pass</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-sans leading-relaxed">
+                    Open your digital ticket on your mobile device, bookmark the seat pass link, or retrieve your printed physical paper ticket before approaching the showroom entrance vestibule.
+                  </p>
+                </div>
+
+                {/* Step 2 */}
+                <div className="p-4 bg-zinc-950 border border-white/5 rounded-lg space-y-2">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-full bg-[#4A0E17]/60 border border-[#C5A85D]/30 flex items-center justify-center text-xs font-sans font-extrabold text-[#E5C46D]">
+                      2
+                    </div>
+                    <div className="flex items-center space-x-1.5 text-white font-sans text-xs font-bold tracking-wider uppercase">
+                      <QrCode className="w-4 h-4 text-[#C5A85D]" />
+                      <span>Scan Under Pedestal</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-sans leading-relaxed">
+                    Hold the barcode/QR code approximately <strong className="text-[#E5C46D]">4 to 6 inches</strong> directly underneath the glow ring scanner module at the atrium lobby kiosk desk.
+                  </p>
+                </div>
+
+                {/* Step 3 */}
+                <div className="p-4 bg-zinc-950 border border-white/5 rounded-lg space-y-2">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-full bg-[#4A0E17]/60 border border-[#C5A85D]/30 flex items-center justify-center text-xs font-sans font-extrabold text-[#E5C46D]">
+                      3
+                    </div>
+                    <div className="flex items-center space-x-1.5 text-white font-sans text-xs font-bold tracking-wider uppercase">
+                      <Volume2 className="w-4 h-4 text-[#C5A85D]" />
+                      <span>Hear the Chime</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-sans leading-relaxed">
+                    Once decoded, the foyer lights pulse deep green and output the iconic Varudu <strong className="text-[#E5C46D]">Regal Gold Chime</strong>, establishing official check-in status.
+                  </p>
+                </div>
+
+                {/* Step 4 */}
+                <div className="p-4 bg-zinc-950 border border-white/5 rounded-lg space-y-2">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-full bg-[#4A0E17]/60 border border-[#C5A85D]/30 flex items-center justify-center text-xs font-sans font-extrabold text-[#E5C46D]">
+                      4
+                    </div>
+                    <div className="flex items-center space-x-1.5 text-white font-sans text-xs font-bold tracking-wider uppercase">
+                      <UserCheck className="w-4 h-4 text-[#C5A85D]" />
+                      <span>Instant Stylist Sync</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-sans leading-relaxed">
+                    Measurements, booking purpose, and curated design files automatically project onto your private drapery suite's workstation terminal. You'll be ushered in immediately.
+                  </p>
+                </div>
+              </div>
+
+              {/* Sandbox Scanner Live Simulator */}
+              <div className="border border-[#C5A85D]/30 bg-[#161619]/90 rounded-lg p-5 space-y-3 shadow-inner relative">
+                <div className="flex items-center justify-between border-b border-[#C5A85D]/10 pb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="text-[10px] uppercase font-sans font-extrabold tracking-widest text-[#E5C46D]">
+                      Live Scanner Sandbox Simulator
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-mono text-zinc-500">READY TO DECODE</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                  <div className="space-y-2.5">
+                    <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
+                      We've bound your active pass credentials into our live scanning simulation below. Click the simulation trigger to demo the real-time audio and visual entrance check-in experience.
+                    </p>
+                    {apptSuccessTicket ? (
+                      <div className="p-3 bg-black/50 rounded border border-white/5 text-xs font-mono tracking-wide grid grid-cols-2 gap-y-1">
+                        <span className="text-zinc-500 uppercase">Groom:</span>
+                        <span className="text-white font-semibold">{apptSuccessTicket.customerName}</span>
+                        <span className="text-zinc-500 uppercase">Lounge:</span>
+                        <span className="text-[#C5A85D] font-semibold">{apptSuccessTicket.branch}</span>
+                        <span className="text-zinc-500 uppercase">Reference:</span>
+                        <span className="text-zinc-300">#{apptSuccessTicket.id.replace('appt-', '')}</span>
+                        <span className="text-zinc-500 uppercase">Verified Scans:</span>
+                        <span className="text-emerald-400 font-bold">{apptSuccessTicket.scanCount || 0}</span>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-black/50 rounded border border-white/5 text-xs font-mono tracking-wide grid grid-cols-2 gap-y-1">
+                        <span className="text-zinc-500 uppercase">Groom:</span>
+                        <span className="text-white font-semibold">Demo VIP Guest</span>
+                        <span className="text-zinc-500 uppercase">Lounge:</span>
+                        <span className="text-[#C5A85D] font-semibold">Hyderabad - Jubilee Hills</span>
+                        <span className="text-zinc-500 uppercase">Reference:</span>
+                        <span className="text-zinc-300">#VR-DEMO-2026</span>
+                        <span className="text-zinc-500 uppercase">Simulated Scans:</span>
+                        <span className="text-emerald-400 font-bold">{mockScanCount}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col space-y-3 items-center justify-center bg-black/20 p-4 border border-zinc-800/45 rounded-md">
+                    {/* The QR code placeholder or image that changes */}
+                    <div className="p-2 bg-white rounded shadow-md border border-[#C5A85D]/30 relative overflow-hidden max-w-[130px] mx-auto">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
+                          apptSuccessTicket
+                            ? `VARUDU ATELIER RESERVATION\nID: ${apptSuccessTicket.id.replace('appt-', '')}\nGroom: ${apptSuccessTicket.customerName}\nPhone: ${apptSuccessTicket.customerPhone}\nLounge: ${apptSuccessTicket.branch}\nSlot: ${apptSuccessTicket.date} @ ${apptSuccessTicket.time}`
+                            : `VARUDU ATELIER RESERVATION\nID: DEMO-2026\nGroom: Demo VIP Guest\nPhone: +91 90000 00000\nLounge: Jubilee Hills\nSlot: Tomorrow @ 11:00 AM`
+                        )}`} 
+                        alt="Simulated QR Code" 
+                        className="w-[100px] h-[100px] block"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Play the audio chime
+                        playRegalGoldChime();
+                        
+                        if (apptSuccessTicket) {
+                          // Real scan event
+                          const updated = updateAppointmentScanEvent(apptSuccessTicket.id);
+                          const fresh = updated.find((a: any) => a.id === apptSuccessTicket.id);
+                          if (fresh) {
+                            setApptSuccessTicket(fresh);
+                          }
+                          setScanSuccessMessage(`✓ TICKET SCAN SUCCESS! Welcome, ${apptSuccessTicket.customerName}. Your VIP Stylist is notified in real-time.`);
+                        } else {
+                          // Mock scan event
+                          setMockScanCount(prev => prev + 1);
+                          setScanSuccessMessage(`✓ SIMULATED SCAN SUCCESS! Ticket #VR-DEMO-2026 registered. Gachibowli reception desk synchronized!`);
+                        }
+                      }}
+                      className="w-full py-2 bg-gradient-to-r from-[#C5A85D] to-[#E5C46D] hover:scale-[1.02] active:scale-[0.98] text-black font-sans text-[10px] font-extrabold uppercase tracking-wider rounded transition-all cursor-pointer flex items-center justify-center space-x-1 text-center font-bold"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" style={{ animationDuration: '4s' }} />
+                      <span>Simulate Entrance Scan</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Simulated feedback overlay alert */}
+                {scanSuccessMessage && (
+                  <div className="p-3 bg-emerald-950/90 border border-emerald-500/30 text-emerald-300 font-sans text-[11px] leading-relaxed rounded text-center animate-fade-in flex items-center justify-center space-x-2">
+                    <span className="font-extrabold">🔔</span>
+                    <span>{scanSuccessMessage}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="pt-4 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCheckInGuide(false);
+                    setScanSuccessMessage('');
+                  }}
+                  className="w-full py-3 bg-[#C5A85D] text-black text-xs font-sans font-bold uppercase tracking-widest rounded text-center cursor-pointer hover:bg-[#E5C46D] transition-colors"
+                >
+                  Examine Complete / Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* READ DYNAMIC JOURNAL STUDY MODAL OVERLAY */}
       {activeReadBlog && (
         <div className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 z-55">
@@ -1934,6 +2198,69 @@ export default function App() {
       {/* ACTIVE POPUPS */}
       <RecentInquiryPopup />
       <ExitIntentPopup onTriggerBook={handleExitIntentBookingTrigger} />
+
+      {/* ELITE CUSTOM COLLECTION REMINDER POPUP */}
+      {showEliteReminder && activeView === 'home' && !isAdminCrmOpen && (
+        <motion.div 
+          initial={{ opacity: 0, y: 40, x: 0, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+          className="fixed bottom-24 right-4 z-45 max-w-[320px] w-[calc(100vw-2rem)] sm:w-full bg-[#121212]/95 border-2 border-[#C5A85D] p-5 rounded shadow-2xl backdrop-blur-md text-left flex flex-col space-y-3.5 hover:scale-[1.01] transition-all"
+          style={{
+            boxShadow: '0 12px 45px rgba(0,0,0,0.9), 0 0 20px rgba(197,168,93,0.08)'
+          }}
+          id="elite-collections-reminder-banner"
+        >
+          <div className="flex items-center justify-between border-b border-white/5 pb-2">
+            <div className="flex items-center space-x-2">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#C5A85D] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#C5A85D]"></span>
+              </span>
+              <span className="text-[9px] tracking-[0.25em] font-sans text-[#E5C46D] font-extrabold uppercase">
+                COUTURE UPDATE
+              </span>
+            </div>
+            <button 
+              type="button"
+              onClick={() => setShowEliteReminder(false)} 
+              className="text-gray-500 hover:text-white transition-colors"
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          
+          <p className="font-sans text-[11.5px] text-white tracking-wide leading-relaxed font-medium">
+            "You want see <strong className="text-[#E7C56D]">Elite Custom Collections</strong> scroll down little"
+          </p>
+
+          <div className="flex items-center space-x-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setShowEliteReminder(false);
+                const el = document.getElementById('featured-collections-desk');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+              className="flex-1 py-1.5 px-3 bg-gradient-to-r from-[#C5A85D] to-[#E5C46D] hover:scale-[1.02] active:scale-[0.98] text-black text-[9.5px] uppercase tracking-widest font-extrabold rounded transition-all flex items-center justify-center space-x-1 cursor-pointer font-bold shadow-md"
+            >
+              <span>Explore Boutique</span>
+              <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowEliteReminder(false)}
+              className="py-1.5 px-3 bg-transparent hover:bg-white/5 border border-white/10 text-gray-400 hover:text-stone-200 text-[9.5px] uppercase tracking-widest font-extrabold rounded transition-all cursor-pointer text-center font-bold"
+            >
+              Dismiss
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* FULL REALTIME ADMINISTRATIVE CRM LAYOUT */}
       {isAdminCrmOpen && (

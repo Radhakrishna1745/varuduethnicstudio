@@ -218,3 +218,15 @@
     height: 1px !important;
   }
 }
+
+@keyframes scanLaser {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(180px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}

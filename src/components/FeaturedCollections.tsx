@@ -15,10 +15,14 @@ const normalizeCategoryLabel = (cat: string): string => {
   const c = String(cat || '').toLowerCase().trim();
   if (c.includes('sherwani')) return 'Sherwanis';
   if (c.includes('indo-western') || c.includes('indowestern')) return 'Indo-Westerns';
+  if (c.includes('jodhpuri') || c.includes('bandhgala')) return 'Royal Jodhpuris';
   if (c.includes('tuxedo')) return 'Tuxedos';
   if (c.includes('kurta') || c.includes('pajama') || c.includes('kurta set')) return 'Kurta Sets';
+  if (c.includes('angrakha') || c.includes('anarkali')) return 'Angrakhas & Anarkalis';
   if (c.includes('reception') || c.includes('tuxedos') || c === 'reception wear') return 'Reception Wear';
+  if (c.includes('haldi') || c.includes('mehendi') || c.includes('sangeet')) return 'Haldi & Sangeet Specialty';
   if (c.includes('accessory') || c.includes('accessories')) return 'Accessories';
+  if (c.includes('safa') || c.includes('turban') || c.includes('pagri')) return 'Royal Safas';
   return cat;
 };
 
@@ -232,7 +236,7 @@ export default function FeaturedCollections({ onSelectProduct }: CollectionsProp
     setActiveImageIndex(0);
   }, [selectedProduct]);
 
-  const categories = ['All', 'Sherwanis', 'Indo-Westerns', 'Tuxedos', 'Kurta Sets', 'Reception Wear', 'Accessories', 'Imperial Fabrics 🧵', 'Royal Reels 📹'];
+  const categories = ['All', 'Sherwanis', 'Indo-Westerns', 'Royal Jodhpuris', 'Tuxedos', 'Kurta Sets', 'Angrakhas & Anarkalis', 'Reception Wear', 'Haldi & Sangeet Specialty', 'Accessories', 'Royal Safas', 'Imperial Fabrics 🧵', 'Royal Reels 📹'];
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();

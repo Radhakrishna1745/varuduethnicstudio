@@ -37,7 +37,7 @@ export default function GroomLookbook() {
     return () => unsubscribe();
   }, []);
 
-  const categories = ['All', 'Sherwani', 'Indo-Western', 'Kurta-Pajama', 'Groom-Accessories'];
+  const categories = ['All', 'Sherwani', 'Indo-Western', 'Royal-Jodhpuri', 'Kurta-Pajama', 'Angrakha-Anarkali', 'Reception-Wear', 'Haldi-Mehendi', 'Groom-Accessories', 'Royal-Safas'];
 
   const filteredItems = activeCategory === 'All'
     ? lookbookItems

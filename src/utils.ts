@@ -98,10 +98,47 @@ const MOCK_APPOINTMENTS: Appointment[] = [
 ];
 
 // --- MODULE SCOPED MEMORY STORAGE (NO LOCALSTORAGE OR INDEXEDDB RUNTIME DEPENDENCY) ---
-let _leadsInMemory: CustomerLead[] | null = null;
-let _appointmentsInMemory: Appointment[] | null = null;
-let _settingsInMemory: Record<string, any> = {};
-let _settingsLoaded = false;
+let _leadsInMemory: CustomerLead[] | null = (() => {
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('varudu_leads_cache');
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+  }
+  return null;
+})();
+
+let _appointmentsInMemory: Appointment[] | null = (() => {
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('varudu_appointments_cache');
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+  }
+  return null;
+})();
+
+let _settingsInMemory: Record<string, any> = (() => {
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem('varudu_settings_cache');
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (_) {}
+  }
+  return {};
+})();
+
+let _settingsLoaded = (() => {
+  if (typeof window !== 'undefined') {
+    try {
+      return !!localStorage.getItem('varudu_settings_cache');
+    } catch (_) {}
+  }
+  return false;
+})();
+
 let _mediaAssetsInMemory: any[] = [];
 
 export const hasSettingsLoaded = () => _settingsLoaded;
@@ -126,9 +163,12 @@ export const saveLead = (lead: Omit<CustomerLead, 'id' | 'timestamp' | 'status' 
   };
   leads.unshift(newLead);
   _leadsInMemory = leads;
+  try {
+    localStorage.setItem('varudu_leads_cache', JSON.stringify(leads));
+  } catch (_) {}
 
   // Sync to live Firestore in background
-  setDoc(doc(db, 'leads', newLead.id), newLead).catch(error => {
+  setDoc(doc(db, 'leads', newLead.id), cleanFirestoreData(newLead)).catch(error => {
     handleFirestoreError(error, OperationType.CREATE, `leads/${newLead.id}`);
   });
 
@@ -151,10 +191,13 @@ export const updateLeadStatus = (id: string, status: CustomerLead['status'], adm
     return l;
   });
   _leadsInMemory = updated;
+  try {
+    localStorage.setItem('varudu_leads_cache', JSON.stringify(updated));
+  } catch (_) {}
 
   // Sync update to Firebase in background
   if (updatedDoc) {
-    setDoc(doc(db, 'leads', id), updatedDoc).catch(error => {
+    setDoc(doc(db, 'leads', id), cleanFirestoreData(updatedDoc)).catch(error => {
       handleFirestoreError(error, OperationType.UPDATE, `leads/${id}`);
     });
   }
@@ -179,9 +222,12 @@ export const saveAppointment = (appointment: Omit<Appointment, 'id' | 'timestamp
   };
   appts.unshift(newAppt);
   _appointmentsInMemory = appts;
+  try {
+    localStorage.setItem('varudu_appointments_cache', JSON.stringify(appts));
+  } catch (_) {}
 
   // Sync to live Firestore in background
-  setDoc(doc(db, 'appointments', newAppt.id), newAppt).catch(error => {
+  setDoc(doc(db, 'appointments', newAppt.id), cleanFirestoreData(newAppt)).catch(error => {
     handleFirestoreError(error, OperationType.CREATE, `appointments/${newAppt.id}`);
   });
 
@@ -204,10 +250,13 @@ export const updateAppointmentStatus = (id: string, status: Appointment['status'
     return a;
   });
   _appointmentsInMemory = updated;
+  try {
+    localStorage.setItem('varudu_appointments_cache', JSON.stringify(updated));
+  } catch (_) {}
 
   // Sync update to Firebase in background
   if (updatedDoc) {
-    setDoc(doc(db, 'appointments', id), updatedDoc).catch(error => {
+    setDoc(doc(db, 'appointments', id), cleanFirestoreData(updatedDoc)).catch(error => {
       handleFirestoreError(error, OperationType.UPDATE, `appointments/${id}`);
     });
   }
@@ -229,10 +278,13 @@ export const updateAppointmentScanEvent = (id: string): Appointment[] => {
     return a;
   });
   _appointmentsInMemory = updated;
+  try {
+    localStorage.setItem('varudu_appointments_cache', JSON.stringify(updated));
+  } catch (_) {}
 
   // Sync update to Firebase in background
   if (updatedDoc) {
-    setDoc(doc(db, 'appointments', id), updatedDoc).catch(error => {
+    setDoc(doc(db, 'appointments', id), cleanFirestoreData(updatedDoc)).catch(error => {
       handleFirestoreError(error, OperationType.UPDATE, `appointments/${id}`);
     });
   }
@@ -245,6 +297,9 @@ export const deleteLead = (id: string): CustomerLead[] => {
   const leads = getStoredLeads();
   const updated = leads.filter(l => l.id !== id);
   _leadsInMemory = updated;
+  try {
+    localStorage.setItem('varudu_leads_cache', JSON.stringify(updated));
+  } catch (_) {}
 
   // Sync delete to Firebase
   deleteDoc(doc(db, 'leads', id)).catch(error => {
@@ -259,6 +314,9 @@ export const deleteMultipleLeads = (ids: string[]): CustomerLead[] => {
   const leads = getStoredLeads();
   const updated = leads.filter(l => !ids.includes(l.id));
   _leadsInMemory = updated;
+  try {
+    localStorage.setItem('varudu_leads_cache', JSON.stringify(updated));
+  } catch (_) {}
 
   // Sync deletes to Firebase in parallel
   ids.forEach(id => {
@@ -275,6 +333,9 @@ export const deleteAppointment = (id: string): Appointment[] => {
   const appts = getStoredAppointments();
   const updated = appts.filter(a => a.id !== id);
   _appointmentsInMemory = updated;
+  try {
+    localStorage.setItem('varudu_appointments_cache', JSON.stringify(updated));
+  } catch (_) {}
 
   // Sync delete to Firebase
   deleteDoc(doc(db, 'appointments', id)).catch(error => {
@@ -288,37 +349,40 @@ export const deleteAppointment = (id: string): Appointment[] => {
 // Initialize CRM default data in Firestore if empty
 export const initializeCRMData = async () => {
   try {
+    console.log('CRM Auto-Init: Starting CRM database check...');
+    // 1. Check and populate default leads if they do not exist in Firestore
+    const leadsColRef = collection(db, 'leads');
+    console.log('CRM Auto-Init: Fetching leads collection...');
+    const leadsSnap = await getDocs(leadsColRef);
+    console.log('CRM Auto-Init: Leads snapshot size =', leadsSnap.size);
+    if (leadsSnap.empty) {
+      console.log('Firebase Sync: Seeding initial MOCK_LEADS into empty Firestore collection...');
+      for (const lead of MOCK_LEADS) {
+        console.log(`CRM Auto-Init: Seeding lead ${lead.id}...`);
+        await setDoc(doc(db, 'leads', lead.id), lead);
+      }
+    }
+
+    // 2. Check and populate default appointments if they do not exist in Firestore
+    const apptsColRef = collection(db, 'appointments');
+    console.log('CRM Auto-Init: Fetching appointments collection...');
+    const apptsSnap = await getDocs(apptsColRef);
+    console.log('CRM Auto-Init: Appointments snapshot size =', apptsSnap.size);
+    if (apptsSnap.empty) {
+      console.log('Firebase Sync: Seeding initial MOCK_APPOINTMENTS into empty Firestore collection...');
+      for (const appt of MOCK_APPOINTMENTS) {
+        console.log(`CRM Auto-Init: Seeding appointment ${appt.id}...`);
+        await setDoc(doc(db, 'appointments', appt.id), appt);
+      }
+    }
+
+    // 3. Mark CRM as initialized
+    console.log('CRM Auto-Init: Writing settings/crm_status...');
     const stateDocRef = doc(db, 'settings', 'crm_status');
-    const stateDoc = await getDoc(stateDocRef);
-    let initialized = false;
-    if (stateDoc.exists()) {
-      initialized = !!stateDoc.data().initialized;
-    }
-
-    if (!initialized) {
-      // 1. Populate default leads if they do not exist
-      const leadsColRef = collection(db, 'leads');
-      const leadsSnap = await getDocs(leadsColRef);
-      if (leadsSnap.empty) {
-        for (const lead of MOCK_LEADS) {
-          await setDoc(doc(db, 'leads', lead.id), lead);
-        }
-      }
-
-      // 2. Populate default appointments if they do not exist
-      const apptsColRef = collection(db, 'appointments');
-      const apptsSnap = await getDocs(apptsColRef);
-      if (apptsSnap.empty) {
-        for (const appt of MOCK_APPOINTMENTS) {
-          await setDoc(doc(db, 'appointments', appt.id), appt);
-        }
-      }
-
-      // 3. Mark CRM as initialized
-      await setDoc(stateDocRef, { initialized: true });
-    }
+    await setDoc(stateDocRef, { initialized: true });
+    console.log('CRM Auto-Init: Success!');
   } catch (error) {
-    console.warn('Silent CRM initialization check:', error);
+    console.error('CRM auto-initialization failure:', error);
   }
 };
 
@@ -334,13 +398,18 @@ export const startLiveSync = () => {
     snapshot.forEach(docSnap => {
       leads.push(docSnap.data() as CustomerLead);
     });
-    leads.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    leads.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
     _leadsInMemory = leads;
+    try {
+      localStorage.setItem('varudu_leads_cache', JSON.stringify(leads));
+    } catch (_) {}
     window.dispatchEvent(new CustomEvent('varudu-lead-updated', { detail: leads }));
   }, (error) => {
-    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
-      console.warn('Leads Sync Error:', error);
-    }
+    console.error('Firestore Realtime Leads Sync Connection Status/Error:', error.message, error);
   });
 
   const unsubscribeAppts = onSnapshot(collection(db, 'appointments'), (snapshot) => {
@@ -348,13 +417,18 @@ export const startLiveSync = () => {
     snapshot.forEach(docSnap => {
       appts.push(docSnap.data() as Appointment);
     });
-    appts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    appts.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
     _appointmentsInMemory = appts;
+    try {
+      localStorage.setItem('varudu_appointments_cache', JSON.stringify(appts));
+    } catch (_) {}
     window.dispatchEvent(new CustomEvent('varudu-appointment-updated', { detail: appts }));
   }, (error) => {
-    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
-      console.warn('Appointments Sync Error:', error);
-    }
+    console.error('Firestore Realtime Appointments Sync Connection Status/Error:', error.message, error);
   });
 
   const unsubscribeSettings = onSnapshot(collection(db, 'settings'), (snapshot) => {
@@ -362,6 +436,9 @@ export const startLiveSync = () => {
       _settingsInMemory[docSnap.id] = docSnap.data();
     });
     _settingsLoaded = true;
+    try {
+      localStorage.setItem('varudu_settings_cache', JSON.stringify(_settingsInMemory));
+    } catch (_) {}
     window.dispatchEvent(new CustomEvent('varudu-settings-updated', { detail: _settingsInMemory }));
     if (_settingsInMemory.collections && Array.isArray(_settingsInMemory.collections.list)) {
       window.dispatchEvent(new CustomEvent('varudu-collections-updated', { detail: _settingsInMemory.collections.list }));
@@ -373,9 +450,7 @@ export const startLiveSync = () => {
       window.dispatchEvent(new CustomEvent('varudu-groomvideos-updated', { detail: _settingsInMemory.groom_videos.list }));
     }
   }, (error) => {
-    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
-      console.warn('Settings Sync Error:', error);
-    }
+    console.error('Firestore Realtime Settings Sync Connection Status/Error:', error.message, error);
   });
 
   const unsubscribeMedia = onSnapshot(collection(db, 'media'), (snapshot) => {
@@ -383,13 +458,15 @@ export const startLiveSync = () => {
     snapshot.forEach(docSnap => {
       media.push(docSnap.data());
     });
-    media.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+    media.sort((a, b) => {
+      const timeA = a.uploadDate ? new Date(a.uploadDate).getTime() : 0;
+      const timeB = b.uploadDate ? new Date(b.uploadDate).getTime() : 0;
+      return timeB - timeA;
+    });
     _mediaAssetsInMemory = media;
     window.dispatchEvent(new CustomEvent('varudu-media-updated', { detail: media }));
   }, (error) => {
-    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
-      console.warn('Media Sync Error:', error);
-    }
+    console.error('Firestore Realtime Media Sync Connection Status/Error:', error.message, error);
   });
 
   const unsubscribeStaticPhotos = onSnapshot(collection(db, 'static_photos'), (snapshot) => {
@@ -402,9 +479,7 @@ export const startLiveSync = () => {
     });
     window.dispatchEvent(new CustomEvent('varudu-photo-updated', { detail: snapshot.size }));
   }, (error) => {
-    if (!error.message.includes('permission-denied') && !error.message.includes('Missing or insufficient permissions')) {
-      console.warn('Static Photos Sync Error:', error);
-    }
+    console.error('Firestore Realtime Static Photos Sync Connection Status/Error:', error.message, error);
   });
 
   return () => {
@@ -414,6 +489,45 @@ export const startLiveSync = () => {
     unsubscribeMedia();
     unsubscribeStaticPhotos();
   };
+};
+
+// Directly fetch leads and appointments from Firestore to force refresh cached memory tables
+export const forceRefreshCRMData = async (): Promise<{ leads: CustomerLead[]; appointments: Appointment[] }> => {
+  const leadsCol = collection(db, 'leads');
+  const apptsCol = collection(db, 'appointments');
+  
+  const [leadsSnap, apptsSnap] = await Promise.all([
+    getDocs(leadsCol),
+    getDocs(apptsCol)
+  ]);
+  
+  const leads: CustomerLead[] = [];
+  leadsSnap.forEach(docSnap => {
+    leads.push(docSnap.data() as CustomerLead);
+  });
+  leads.sort((a, b) => {
+    const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return timeB - timeA;
+  });
+  
+  const appts: Appointment[] = [];
+  apptsSnap.forEach(docSnap => {
+    appts.push(docSnap.data() as Appointment);
+  });
+  appts.sort((a, b) => {
+    const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return timeB - timeA;
+  });
+  
+  _leadsInMemory = leads;
+  _appointmentsInMemory = appts;
+  
+  window.dispatchEvent(new CustomEvent('varudu-lead-updated', { detail: leads }));
+  window.dispatchEvent(new CustomEvent('varudu-appointment-updated', { detail: appts }));
+  
+  return { leads, appointments: appts };
 };
 
 // Play a premium crystal gold warning/chime buzzer

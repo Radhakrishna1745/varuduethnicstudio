@@ -34,17 +34,18 @@ service cloud.firestore {
         && data.name is string && data.name.size() > 0 && data.name.size() <= 128
         && data.phone is string && data.phone.size() > 0 && data.phone.size() <= 32
         && data.email is string && data.email.size() > 0 && data.email.size() <= 128
-        && (data.weddingDate == null || (data.weddingDate is string && data.weddingDate.size() <= 32))
-        && (data.occasion == null || (data.occasion is string && data.occasion.size() <= 200))
-        && (data.budget == null || (data.budget is string && data.budget.size() <= 64))
-        && (data.preferredColors == null || (data.preferredColors is list && data.preferredColors.size() <= 10))
-        && (data.preferredStyles == null || (data.preferredStyles is list && data.preferredStyles.size() <= 10))
-        && (data.notes == null || (data.notes is string && data.notes.size() <= 1000))
+        && (data.get('weddingDate', null) == null || (data.get('weddingDate', null) is string && data.get('weddingDate', '').size() <= 32))
+        && (data.get('occasion', null) == null || (data.get('occasion', null) is string && data.get('occasion', '').size() <= 200))
+        && (data.get('budget', null) == null || (data.get('budget', null) is string && data.get('budget', '').size() <= 64))
+        && (data.get('preferredColors', null) == null || (data.get('preferredColors', null) is list && data.get('preferredColors', []).size() <= 10))
+        && (data.get('preferredStyles', null) == null || (data.get('preferredStyles', null) is list && data.get('preferredStyles', []).size() <= 10))
+        && (data.get('notes', null) == null || (data.get('notes', null) is string && data.get('notes', '').size() <= 1000))
         && data.timestamp is string && data.timestamp.size() <= 32
         && data.status is string && data.status.size() <= 32
-        && (data.uploadedImages == null || (data.uploadedImages is list && data.uploadedImages.size() <= 10))
-        && (data.adminNotes == null || (data.adminNotes is string && data.adminNotes.size() <= 1000))
-        && (data.whatsappSent == null || data.whatsappSent is bool);
+        && (data.get('uploadedImages', null) == null || (data.get('uploadedImages', null) is list && data.get('uploadedImages', []).size() <= 10))
+        && (data.get('adminNotes', null) == null || (data.get('adminNotes', null) is string && data.get('adminNotes', '').size() <= 1000))
+        && (data.get('whatsappSent', null) == null || data.get('whatsappSent', null) is bool)
+        && (data.get('location', null) == null || (data.get('location', null) is string && data.get('location', '').size() <= 500));
     }
 
     // Validation Blueprint for Appointment
@@ -55,11 +56,14 @@ service cloud.firestore {
         && data.time is string && data.time.size() > 0 && data.time.size() <= 32
         && data.customerName is string && data.customerName.size() > 0 && data.customerName.size() <= 128
         && data.customerPhone is string && data.customerPhone.size() > 0 && data.customerPhone.size() <= 32
-        && (data.customerEmail == null || (data.customerEmail is string && data.customerEmail.size() <= 128))
-        && (data.occasion == null || (data.occasion is string && data.occasion.size() <= 200))
+        && (data.get('customerEmail', null) == null || (data.get('customerEmail', null) is string && data.get('customerEmail', '').size() <= 128))
+        && (data.get('occasion', null) == null || (data.get('occasion', null) is string && data.get('occasion', '').size() <= 200))
         && data.status is string && data.status.size() <= 32
         && data.timestamp is string && data.timestamp.size() <= 32
-        && (data.adminNotes == null || (data.adminNotes is string && data.adminNotes.size() <= 1000));
+        && (data.get('adminNotes', null) == null || (data.get('adminNotes', null) is string && data.get('adminNotes', '').size() <= 1000))
+        && (data.get('specialRequests', null) == null || (data.get('specialRequests', null) is string && data.get('specialRequests', '').size() <= 1500))
+        && (data.get('scanCount', null) == null || data.get('scanCount', null) is int)
+        && (data.get('lastScannedAt', null) == null || (data.get('lastScannedAt', null) is string));
     }
 
     // Validation Blueprint for MediaItem
@@ -99,6 +103,11 @@ service cloud.firestore {
     // Static photos collection rules
     match /static_photos/{photoId} {
       allow read, write: if true; // Publicly readable and editable in sandbox/demo environment
+    }
+
+    // Test collection rules for connection health checks
+    match /test/{testId} {
+      allow read: if true; // Publicly readable for connection status test
     }
 
     // Media collection rules
